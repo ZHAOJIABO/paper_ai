@@ -1,0 +1,13 @@
+server:
+  port: 8080
+  read_timeout: 30s
+  write_timeout: 30s
+
+ai:
+  default_provider: claude
+  providers:
+    claude:
+      api_key: "sk-ant-xxx"  # 请替换为你的Claude API Key
+      base_url: "https://api.anthropic.com"
+      model: "claude-3-5-sonnet-20241022"
+      timeout: 60s
