@@ -1,0 +1,531 @@
+openapi: 3.0.0
+info:
+  title: Paper AI API
+  description: 科研AI服务平台API文档
+  version: 1.0.0
+  contact:
+    name: Paper AI Team
+
+servers:
+  - url: http://localhost:8080
+    description: 本地开发环境
+
+tags:
+  - name: 认证
+    description: 用户认证相关接口
+  - name: 论文润色
+    description: 论文段落润色相关接口
+  - name: 查询统计
+    description: 查询记录和统计信息
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT认证，格式：Bearer <token>
+
+  schemas:
+    Response:
+      type: object
+      properties:
+        code:
+          type: integer
+          description: 错误码，0表示成功
+        message:
+          type: string
+          description: 响应消息
+        data:
+          type: object
+          description: 响应数据
+        trace_id:
+          type: string
+          description: 请求追踪ID
+
+    UserInfo:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        username:
+          type: string
+        email:
+          type: string
+        nickname:
+          type: string
+        avatar_url:
+          type: string
+        status:
+          type: string
+          enum: [active, inactive, banned]
+        email_verified:
+          type: boolean
+        last_login_at:
+          type: string
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+
+paths:
+  /health:
+    get:
+      summary: 健康检查
+      tags:
+        - 系统
+      responses:
+        '200':
+          description: 服务正常
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+
+  /api/v1/auth/register:
+    post:
+      summary: 用户注册
+      tags:
+        - 认证
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - username
+                - email
+                - password
+                - confirm_password
+              properties:
+                username:
+                  type: string
+                  minLength: 3
+                  maxLength: 50
+                  description: 用户名（3-50位，只能包含字母、数字、下划线）
+                  example: john_doe
+                email:
+                  type: string
+                  format: email
+                  description: 邮箱地址
+                  example: john@example.com
+                password:
+                  type: string
+                  minLength: 8
+                  description: 密码（至少8位，包含字母和数字）
+                  example: Password123
+                confirm_password:
+                  type: string
+                  description: 确认密码
+                  example: Password123
+                nickname:
+                  type: string
+                  maxLength: 50
+                  description: 昵称（可选）
+                  example: John
+      responses:
+        '200':
+          description: 注册成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Response'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/UserInfo'
+        '400':
+          description: 参数错误或用户已存在
+
+  /api/v1/auth/login:
+    post:
+      summary: 用户登录
+      tags:
+        - 认证
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - username
+                - password
+              properties:
+                username:
+                  type: string
+                  description: 用户名或邮箱
+                  example: john_doe
+                password:
+                  type: string
+                  description: 密码
+                  example: Password123
+      responses:
+        '200':
+          description: 登录成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Response'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          access_token:
+                            type: string
+                            description: 访问令牌
+                          refresh_token:
+                            type: string
+                            description: 刷新令牌
+                          expires_in:
+                            type: integer
+                            description: 令牌过期时间（秒）
+                            example: 7200
+                          token_type:
+                            type: string
+                            example: Bearer
+                          user:
+                            $ref: '#/components/schemas/UserInfo'
+        '401':
+          description: 用户名或密码错误
+
+  /api/v1/auth/refresh:
+    post:
+      summary: 刷新访问令牌
+      tags:
+        - 认证
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - refresh_token
+              properties:
+                refresh_token:
+                  type: string
+                  description: 刷新令牌
+      responses:
+        '200':
+          description: 刷新成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Response'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          access_token:
+                            type: string
+                          expires_in:
+                            type: integer
+                            example: 7200
+                          token_type:
+                            type: string
+                            example: Bearer
+        '401':
+          description: 刷新令牌无效或已过期
+
+  /api/v1/auth/me:
+    get:
+      summary: 获取当前用户信息
+      tags:
+        - 认证
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: 获取成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Response'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/UserInfo'
+        '401':
+          description: 未授权
+
+  /api/v1/auth/logout:
+    post:
+      summary: 用户登出
+      tags:
+        - 认证
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - refresh_token
+              properties:
+                refresh_token:
+                  type: string
+                  description: 刷新令牌
+      responses:
+        '200':
+          description: 登出成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Response'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          message:
+                            type: string
+                            example: 登出成功
+
+  /api/v1/polish:
+    post:
+      summary: 段落润色
+      tags:
+        - 论文润色
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - content
+              properties:
+                content:
+                  type: string
+                  maxLength: 10000
+                  description: 需要润色的文本内容
+                  example: 这篇文章讨论了机器学习在软件开发中的作用。
+                style:
+                  type: string
+                  enum: [academic, formal, concise]
+                  default: academic
+                  description: 润色风格
+                  example: academic
+                language:
+                  type: string
+                  enum: [en, zh]
+                  default: en
+                  description: 目标语言
+                  example: zh
+                provider:
+                  type: string
+                  enum: [claude, doubao]
+                  description: AI提供商（可选，不指定则使用默认）
+                  example: doubao
+      responses:
+        '200':
+          description: 润色成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Response'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          polished_content:
+                            type: string
+                            description: 润色后的文本
+                          original_length:
+                            type: integer
+                            description: 原始文本长度
+                          polished_length:
+                            type: integer
+                            description: 润色后文本长度
+                          suggestions:
+                            type: array
+                            items:
+                              type: string
+                            description: 改进建议
+                          provider_used:
+                            type: string
+                            description: 实际使用的AI提供商
+                          model_used:
+                            type: string
+                            description: 实际使用的模型
+        '401':
+          description: 未授权
+
+  /api/v1/polish/records:
+    get:
+      summary: 查询润色记录列表
+      tags:
+        - 查询统计
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+          description: 页码
+        - name: page_size
+          in: query
+          schema:
+            type: integer
+            default: 20
+            maximum: 100
+          description: 每页大小
+        - name: provider
+          in: query
+          schema:
+            type: string
+          description: 按提供商过滤
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [success, failed]
+          description: 按状态过滤
+        - name: language
+          in: query
+          schema:
+            type: string
+            enum: [en, zh]
+          description: 按语言过滤
+        - name: style
+          in: query
+          schema:
+            type: string
+            enum: [academic, formal, concise]
+          description: 按风格过滤
+        - name: exclude_text
+          in: query
+          schema:
+            type: boolean
+          description: 是否排除大文本字段
+        - name: start_time
+          in: query
+          schema:
+            type: string
+            format: date-time
+          description: 开始时间（RFC3339格式）
+        - name: end_time
+          in: query
+          schema:
+            type: string
+            format: date-time
+          description: 结束时间（RFC3339格式）
+      responses:
+        '200':
+          description: 查询成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Response'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          records:
+                            type: array
+                            items:
+                              type: object
+                          total:
+                            type: integer
+                          page:
+                            type: integer
+                          page_size:
+                            type: integer
+
+  /api/v1/polish/records/{trace_id}:
+    get:
+      summary: 根据TraceID查询记录
+      tags:
+        - 查询统计
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: trace_id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: 请求追踪ID
+      responses:
+        '200':
+          description: 查询成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Response'
+
+  /api/v1/polish/statistics:
+    get:
+      summary: 获取统计信息
+      tags:
+        - 查询统计
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: start_time
+          in: query
+          schema:
+            type: string
+            format: date-time
+          description: 开始时间（RFC3339格式）
+        - name: end_time
+          in: query
+          schema:
+            type: string
+            format: date-time
+          description: 结束时间（RFC3339格式）
+      responses:
+        '200':
+          description: 查询成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Response'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          total_count:
+                            type: integer
+                          success_count:
+                            type: integer
+                          failed_count:
+                            type: integer
+                          success_rate:
+                            type: number
+                            format: float
+                          avg_process_time_ms:
+                            type: number
+                            format: float
+                          provider_stats:
+                            type: object
+                          language_stats:
+                            type: object
+                          style_stats:
+                            type: object

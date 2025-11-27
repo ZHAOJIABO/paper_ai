@@ -11,6 +11,8 @@ type Config struct {
 	Server   ServerConfig   `mapstructure:"server"`
 	AI       AIConfig       `mapstructure:"ai"`
 	Database DatabaseConfig `mapstructure:"database"`
+	JWT      JWTConfig      `mapstructure:"jwt"`
+	IDGen    IDGenConfig    `mapstructure:"idgen"`
 }
 
 type ServerConfig struct {
@@ -43,6 +45,16 @@ type DatabaseConfig struct {
 	ConnMaxLifetime int    `mapstructure:"conn_max_lifetime"`
 	AutoMigrate     bool   `mapstructure:"auto_migrate"`
 	LogMode         string `mapstructure:"log_mode"`
+}
+
+type JWTConfig struct {
+	SecretKey            string `mapstructure:"secret_key"`
+	AccessTokenExpiry    int    `mapstructure:"access_token_expiry"`    // 秒
+	RefreshTokenExpiry   int    `mapstructure:"refresh_token_expiry"`   // 秒
+}
+
+type IDGenConfig struct {
+	WorkerID int64 `mapstructure:"worker_id"` // Snowflake机器ID (0-1023)
 }
 
 var globalConfig *Config
@@ -92,4 +104,12 @@ func setDefaults() {
 	viper.SetDefault("database.conn_max_lifetime", 3600)
 	viper.SetDefault("database.auto_migrate", true)
 	viper.SetDefault("database.log_mode", "info")
+
+	// JWT默认配置
+	viper.SetDefault("jwt.secret_key", "your-secret-key-change-in-production")
+	viper.SetDefault("jwt.access_token_expiry", 7200)    // 2小时
+	viper.SetDefault("jwt.refresh_token_expiry", 604800) // 7天
+
+	// ID生成器默认配置
+	viper.SetDefault("idgen.worker_id", 1) // 默认机器ID为1
 }

@@ -30,6 +30,17 @@ const (
 	CodeInternalError     = 10005
 	CodeProviderNotFound  = 10006
 	CodeConfigError       = 10007
+
+	// 认证相关错误码 20xxx
+	CodeUserExists       = 20001 // 用户已存在
+	CodeInvalidPassword  = 20002 // 密码错误
+	CodeUserNotFound     = 20003 // 用户不存在
+	CodeTokenInvalid     = 20004 // Token无效
+	CodeTokenExpired     = 20005 // Token过期
+	CodePasswordWeak     = 20006 // 密码强度不够
+	CodeAccountBanned    = 20007 // 账号已被封禁
+	CodeUnauthorized     = 20008 // 未授权
+	CodeForbidden        = 20009 // 禁止访问
 )
 
 // NewInvalidParameterError 参数错误
@@ -71,12 +82,16 @@ func NewTimeoutError(message string, err error) *AppError {
 }
 
 // NewInternalError 内部错误
-func NewInternalError(message string, err error) *AppError {
+func NewInternalError(message string, err ...error) *AppError {
+	var e error
+	if len(err) > 0 {
+		e = err[0]
+	}
 	return &AppError{
 		Code:       CodeInternalError,
 		Message:    message,
 		HTTPStatus: http.StatusInternalServerError,
-		Err:        err,
+		Err:        e,
 	}
 }
 
@@ -96,5 +111,41 @@ func NewConfigError(message string, err error) *AppError {
 		Message:    message,
 		HTTPStatus: http.StatusInternalServerError,
 		Err:        err,
+	}
+}
+
+// NewBadRequestError 请求参数错误
+func NewBadRequestError(message string) *AppError {
+	return &AppError{
+		Code:       CodeInvalidParameter,
+		Message:    message,
+		HTTPStatus: http.StatusBadRequest,
+	}
+}
+
+// NewUnauthorizedError 未授权错误
+func NewUnauthorizedError(message string) *AppError {
+	return &AppError{
+		Code:       CodeUnauthorized,
+		Message:    message,
+		HTTPStatus: http.StatusUnauthorized,
+	}
+}
+
+// NewForbiddenError 禁止访问错误
+func NewForbiddenError(message string) *AppError {
+	return &AppError{
+		Code:       CodeForbidden,
+		Message:    message,
+		HTTPStatus: http.StatusForbidden,
+	}
+}
+
+// NewNotFoundError 资源不存在错误
+func NewNotFoundError(message string) *AppError {
+	return &AppError{
+		Code:       CodeUserNotFound,
+		Message:    message,
+		HTTPStatus: http.StatusNotFound,
 	}
 }

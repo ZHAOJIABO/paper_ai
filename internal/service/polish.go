@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"paper_ai/internal/config"
@@ -30,20 +31,21 @@ func NewPolishService(factory *ai.ProviderFactory, repo repository.PolishReposit
 }
 
 // Polish 执行段落润色
-func (s *PolishService) Polish(ctx context.Context, req *model.PolishRequest) (*types.PolishResponse, error) {
+func (s *PolishService) Polish(ctx context.Context, req *model.PolishRequest, userID int64) (*types.PolishResponse, error) {
 	startTime := time.Now()
 
-	// 从context中获取traceID
+	// 从context中获取traceID，如果没有则生成唯一ID
 	traceID, ok := ctx.Value("trace_id").(string)
 	if !ok || traceID == "" {
-		traceID = "unknown"
+		// 生成唯一的traceID: 时间戳 + 用户ID + 纳秒
+		traceID = fmt.Sprintf("trace_%d_%d_%d", time.Now().Unix(), userID, time.Now().Nanosecond())
 	}
 
 	// 参数验证
 	if err := req.Validate(); err != nil {
 		logger.Warn("invalid polish request", zap.Error(err))
 		// 记录失败的请求
-		s.saveFailedRecord(ctx, traceID, req, err)
+		s.saveFailedRecord(ctx, traceID, req, userID, err)
 		return nil, apperrors.NewInvalidParameterError(err.Error())
 	}
 
@@ -59,7 +61,7 @@ func (s *PolishService) Polish(ctx context.Context, req *model.PolishRequest) (*
 		provider, err = s.providerFactory.GetDefaultProvider()
 		if err != nil {
 			logger.Error("failed to get default provider", zap.Error(err))
-			s.saveFailedRecord(ctx, traceID, req, err)
+			s.saveFailedRecord(ctx, traceID, req, userID, err)
 			return nil, err
 		}
 		req.Provider = config.Get().AI.DefaultProvider
@@ -68,7 +70,7 @@ func (s *PolishService) Polish(ctx context.Context, req *model.PolishRequest) (*
 		provider, err = s.providerFactory.GetProvider(req.Provider)
 		if err != nil {
 			logger.Error("failed to get provider", zap.String("provider", req.Provider), zap.Error(err))
-			s.saveFailedRecord(ctx, traceID, req, err)
+			s.saveFailedRecord(ctx, traceID, req, userID, err)
 			return nil, err
 		}
 	}
@@ -84,6 +86,7 @@ func (s *PolishService) Polish(ctx context.Context, req *model.PolishRequest) (*
 	logger.Info("calling ai provider for polish",
 		zap.String("provider", req.Provider),
 		zap.Int("content_length", len(req.Content)),
+		zap.Int64("user_id", userID),
 	)
 
 	resp, err := provider.Polish(ctx, aiReq)
@@ -92,7 +95,7 @@ func (s *PolishService) Polish(ctx context.Context, req *model.PolishRequest) (*
 			zap.String("provider", req.Provider),
 			zap.Error(err),
 		)
-		s.saveFailedRecord(ctx, traceID, req, err)
+		s.saveFailedRecord(ctx, traceID, req, userID, err)
 		return nil, err
 	}
 
@@ -100,26 +103,28 @@ func (s *PolishService) Polish(ctx context.Context, req *model.PolishRequest) (*
 	processTime := time.Since(startTime).Milliseconds()
 
 	// 保存成功记录
-	s.saveSuccessRecord(ctx, traceID, req, resp, int(processTime))
+	s.saveSuccessRecord(ctx, traceID, req, resp, userID, int(processTime))
 
 	logger.Info("polish completed successfully",
 		zap.String("provider", req.Provider),
 		zap.Int("original_length", resp.OriginalLength),
 		zap.Int("polished_length", resp.PolishedLength),
 		zap.Int64("process_time_ms", processTime),
+		zap.Int64("user_id", userID),
 	)
 
 	return resp, nil
 }
 
 // saveSuccessRecord 保存成功记录
-func (s *PolishService) saveSuccessRecord(ctx context.Context, traceID string, req *model.PolishRequest, resp *types.PolishResponse, processTime int) {
+func (s *PolishService) saveSuccessRecord(ctx context.Context, traceID string, req *model.PolishRequest, resp *types.PolishResponse, userID int64, processTime int) {
 	if s.polishRepo == nil {
 		return // 如果没有配置数据库，跳过保存
 	}
 
 	record := &entity.PolishRecord{
 		TraceID:         traceID,
+		UserID:          userID,
 		OriginalContent: req.Content,
 		Style:           req.Style,
 		Language:        req.Language,
@@ -138,13 +143,14 @@ func (s *PolishService) saveSuccessRecord(ctx context.Context, traceID string, r
 }
 
 // saveFailedRecord 保存失败记录
-func (s *PolishService) saveFailedRecord(ctx context.Context, traceID string, req *model.PolishRequest, err error) {
+func (s *PolishService) saveFailedRecord(ctx context.Context, traceID string, req *model.PolishRequest, userID int64, err error) {
 	if s.polishRepo == nil {
 		return
 	}
 
 	record := &entity.PolishRecord{
 		TraceID:         traceID,
+		UserID:          userID,
 		OriginalContent: req.Content,
 		Style:           req.Style,
 		Language:        req.Language,
@@ -158,11 +164,22 @@ func (s *PolishService) saveFailedRecord(ctx context.Context, traceID string, re
 }
 
 // GetRecordByTraceID 根据TraceID获取记录
-func (s *PolishService) GetRecordByTraceID(ctx context.Context, traceID string) (*entity.PolishRecord, error) {
+func (s *PolishService) GetRecordByTraceID(ctx context.Context, traceID string, userID int64) (*entity.PolishRecord, error) {
 	if s.polishRepo == nil {
 		return nil, apperrors.NewInternalError("database not configured", nil)
 	}
-	return s.polishRepo.GetByTraceID(ctx, traceID)
+
+	record, err := s.polishRepo.GetByTraceID(ctx, traceID)
+	if err != nil {
+		return nil, err
+	}
+
+	// 验证记录所有权（只能查看自己的记录）
+	if record.UserID != userID {
+		return nil, apperrors.NewForbiddenError("you don't have permission to access this record")
+	}
+
+	return record, nil
 }
 
 // ListRecords 获取记录列表

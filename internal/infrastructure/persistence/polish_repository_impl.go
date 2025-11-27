@@ -177,12 +177,16 @@ func (r *polishRepositoryImpl) buildQuery(ctx context.Context, opts repository.Q
 	// 字段选择优化
 	if opts.ExcludeText {
 		// 排除大文本字段，提高查询性能
-		query = query.Select("id, trace_id, style, language, original_length, polished_length, provider, model, process_time_ms, status, created_at, updated_at")
+		query = query.Select("id, trace_id, user_id, style, language, original_length, polished_length, provider, model, process_time_ms, status, created_at, updated_at")
 	} else if len(opts.SelectFields) > 0 {
 		query = query.Select(opts.SelectFields)
 	}
 
 	// 过滤条件
+	if opts.UserID != nil {
+		query = query.Where("user_id = ?", *opts.UserID)
+	}
+
 	if opts.Provider != nil {
 		query = query.Where("provider = ?", *opts.Provider)
 	}

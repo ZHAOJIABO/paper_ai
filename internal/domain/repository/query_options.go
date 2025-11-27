@@ -11,6 +11,7 @@ type QueryOptions struct {
 	Limit    int
 
 	// 过滤条件
+	UserID   *int64  // 按用户ID过滤 ⭐ 新增
 	Provider *string // 按提供商过滤
 	Status   *string // 按状态过滤
 	Language *string // 按语言过滤
@@ -60,6 +61,12 @@ func (b *QueryOptionsBuilder) Page(page, pageSize int) *QueryOptionsBuilder {
 	b.opts.PageSize = pageSize
 	b.opts.Offset = (page - 1) * pageSize
 	b.opts.Limit = pageSize
+	return b
+}
+
+// WithUserID 按用户ID过滤 ⭐ 新增
+func (b *QueryOptionsBuilder) WithUserID(userID int64) *QueryOptionsBuilder {
+	b.opts.UserID = &userID
 	return b
 }
 
@@ -120,6 +127,7 @@ func (b *QueryOptionsBuilder) Build() QueryOptions {
 
 // StatisticsOptions 统计选项
 type StatisticsOptions struct {
+	UserID      *int64     // 按用户ID过滤
 	TimeRange   *TimeRange
 	GroupBy     []string // 分组维度：provider, status, language, style
 	Aggregation []string // 聚合字段：count, avg_time, success_rate

@@ -8,6 +8,7 @@ type PolishRecord struct {
 	// 基础字段
 	ID      int64
 	TraceID string
+	UserID  int64 // 用户ID
 
 	// 输入信息
 	OriginalContent string

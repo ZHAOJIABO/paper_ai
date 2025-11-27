@@ -39,3 +39,10 @@ Thumbs.db
 # Logs
 *.log
 logs/
+
+# 部署相关
+backup/
+ssl/
+
+# 旧文档
+README.old.md

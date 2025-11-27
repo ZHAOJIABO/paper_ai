@@ -20,6 +20,11 @@ func (r *polishRepositoryImpl) GetStatistics(ctx context.Context, opts repositor
 
 	query := r.db.WithContext(ctx).Model(&PolishRecordPO{})
 
+	// 用户ID过滤
+	if opts.UserID != nil {
+		query = query.Where("user_id = ?", *opts.UserID)
+	}
+
 	// 时间范围过滤
 	if opts.TimeRange != nil {
 		query = query.Where("created_at >= ? AND created_at <= ?", opts.TimeRange.Start, opts.TimeRange.End)
@@ -81,6 +86,9 @@ func (r *polishRepositoryImpl) getProviderStats(ctx context.Context, opts reposi
 	}
 
 	query := r.db.WithContext(ctx).Model(&PolishRecordPO{})
+	if opts.UserID != nil {
+		query = query.Where("user_id = ?", *opts.UserID)
+	}
 	if opts.TimeRange != nil {
 		query = query.Where("created_at >= ? AND created_at <= ?", opts.TimeRange.Start, opts.TimeRange.End)
 	}
@@ -121,6 +129,9 @@ func (r *polishRepositoryImpl) getLanguageStats(ctx context.Context, opts reposi
 	}
 
 	query := r.db.WithContext(ctx).Model(&PolishRecordPO{})
+	if opts.UserID != nil {
+		query = query.Where("user_id = ?", *opts.UserID)
+	}
 	if opts.TimeRange != nil {
 		query = query.Where("created_at >= ? AND created_at <= ?", opts.TimeRange.Start, opts.TimeRange.End)
 	}
@@ -161,6 +172,9 @@ func (r *polishRepositoryImpl) getStyleStats(ctx context.Context, opts repositor
 	}
 
 	query := r.db.WithContext(ctx).Model(&PolishRecordPO{})
+	if opts.UserID != nil {
+		query = query.Where("user_id = ?", *opts.UserID)
+	}
 	if opts.TimeRange != nil {
 		query = query.Where("created_at >= ? AND created_at <= ?", opts.TimeRange.Start, opts.TimeRange.End)
 	}

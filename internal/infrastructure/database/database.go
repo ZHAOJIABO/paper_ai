@@ -135,7 +135,8 @@ func Health(ctx context.Context) error {
 func migrate(db *gorm.DB) error {
 	return db.AutoMigrate(
 		&persistence.PolishRecordPO{},
-		// 其他实体...
+		&persistence.UserPO{},
+		&persistence.RefreshTokenPO{},
 	)
 }
 

@@ -4,10 +4,16 @@ import (
 	"github.com/gin-gonic/gin"
 	"paper_ai/internal/api/handler"
 	"paper_ai/internal/api/middleware"
+	"paper_ai/internal/infrastructure/security"
 )
 
 // Setup 设置路由
-func Setup(polishHandler *handler.PolishHandler, queryHandler *handler.PolishQueryHandler) *gin.Engine {
+func Setup(
+	polishHandler *handler.PolishHandler,
+	queryHandler *handler.PolishQueryHandler,
+	authHandler *handler.AuthHandler,
+	jwtManager *security.JWTManager,
+) *gin.Engine {
 	// 设置Gin为发布模式
 	gin.SetMode(gin.ReleaseMode)
 
@@ -28,15 +34,32 @@ func Setup(polishHandler *handler.PolishHandler, queryHandler *handler.PolishQue
 	// API v1 路由组
 	v1 := r.Group("/api/v1")
 	{
-		// 段落润色
-		v1.POST("/polish", polishHandler.Polish)
+		// 认证路由（无需认证）
+		auth := v1.Group("/auth")
+		{
+			auth.POST("/register", authHandler.Register)
+			auth.POST("/login", authHandler.Login)
+			auth.POST("/refresh", authHandler.RefreshToken)
+		}
 
-		// 查询记录（新增）
-		v1.GET("/polish/records", queryHandler.ListRecords)
-		v1.GET("/polish/records/:trace_id", queryHandler.GetRecordByTraceID)
+		// 需要认证的路由
+		authenticated := v1.Group("")
+		authenticated.Use(middleware.AuthRequired(jwtManager))
+		{
+			// 用户相关
+			authenticated.GET("/auth/me", authHandler.GetCurrentUser)
+			authenticated.POST("/auth/logout", authHandler.Logout)
 
-		// 统计信息（新增）
-		v1.GET("/polish/statistics", queryHandler.GetStatistics)
+			// 段落润色（需要认证）
+			authenticated.POST("/polish", polishHandler.Polish)
+
+			// 查询记录（需要认证）
+			authenticated.GET("/polish/records", queryHandler.ListRecords)
+			authenticated.GET("/polish/records/:trace_id", queryHandler.GetRecordByTraceID)
+
+			// 统计信息（需要认证）
+			authenticated.GET("/polish/statistics", queryHandler.GetStatistics)
+		}
 	}
 
 	return r

@@ -33,7 +33,17 @@ func (h *PolishQueryHandler) GetRecordByTraceID(c *gin.Context) {
 		return
 	}
 
-	record, err := h.polishService.GetRecordByTraceID(c.Request.Context(), traceID)
+	// 从JWT上下文获取用户ID，确保只能查询自己的记录
+	userID, exists := c.Get("user_id")
+	if !exists {
+		c.JSON(401, gin.H{
+			"code":    401,
+			"message": "unauthorized",
+		})
+		return
+	}
+
+	record, err := h.polishService.GetRecordByTraceID(c.Request.Context(), traceID, userID.(int64))
 	if err != nil {
 		response.Error(c, err)
 		return
@@ -66,6 +76,12 @@ func (h *PolishQueryHandler) ListRecords(c *gin.Context) {
 	builder := repository.NewQueryOptions().
 		Page(page, pageSize).
 		OrderBy("created_at", true) // 默认按创建时间降序
+
+	// 从JWT上下文获取用户ID，确保只能查询自己的记录
+	userID, exists := c.Get("user_id")
+	if exists {
+		builder.WithUserID(userID.(int64))
+	}
 
 	if provider != "" {
 		builder.WithProvider(provider)
@@ -117,6 +133,13 @@ func (h *PolishQueryHandler) GetStatistics(c *gin.Context) {
 	endTimeStr := c.Query("end_time")
 
 	opts := repository.StatisticsOptions{}
+
+	// 从JWT上下文获取用户ID，确保只能查看自己的统计信息
+	userID, exists := c.Get("user_id")
+	if exists {
+		uid := userID.(int64)
+		opts.UserID = &uid
+	}
 
 	if startTimeStr != "" && endTimeStr != "" {
 		startTime, err1 := time.Parse(time.RFC3339, startTimeStr)

@@ -27,7 +27,13 @@ func (h *PolishHandler) Polish(c *gin.Context) {
 		return
 	}
 
-	resp, err := h.polishService.Polish(c.Request.Context(), &req)
+	// 从上下文获取用户ID（由JWT中间件设置）
+	userID, exists := c.Get("user_id")
+	if !exists {
+		userID = int64(0) // 如果没有登录，使用0（后续可以改为返回错误）
+	}
+
+	resp, err := h.polishService.Polish(c.Request.Context(), &req, userID.(int64))
 	if err != nil {
 		response.Error(c, err)
 		return

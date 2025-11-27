@@ -15,7 +15,9 @@ import (
 	"paper_ai/internal/infrastructure/ai"
 	"paper_ai/internal/infrastructure/database"
 	"paper_ai/internal/infrastructure/persistence"
+	"paper_ai/internal/infrastructure/security"
 	"paper_ai/internal/service"
+	"paper_ai/pkg/idgen"
 	"paper_ai/pkg/logger"
 	"go.uber.org/zap"
 )
@@ -45,6 +47,12 @@ func main() {
 	defer database.Close()
 	logger.Info("database initialized successfully")
 
+	// 初始化ID生成器
+	if err := idgen.Init(cfg.IDGen.WorkerID); err != nil {
+		logger.Fatal("failed to init ID generator", zap.Error(err))
+	}
+	logger.Info("ID generator initialized", zap.Int64("worker_id", cfg.IDGen.WorkerID))
+
 	// 初始化AI提供商工厂
 	factory := ai.GetFactory()
 	if err := factory.InitProviders(cfg); err != nil {
@@ -54,16 +62,28 @@ func main() {
 
 	// 创建仓储实现（新增）
 	polishRepo := persistence.NewPolishRepository(database.GetDB().GetGormDB())
+	userRepo := persistence.NewUserRepository(database.GetDB().GetGormDB())
+	tokenRepo := persistence.NewRefreshTokenRepository(database.GetDB().GetGormDB())
+
+	// 初始化JWT管理器
+	jwtManager := security.NewJWTManager(
+		cfg.JWT.SecretKey,
+		time.Duration(cfg.JWT.AccessTokenExpiry)*time.Second,
+		time.Duration(cfg.JWT.RefreshTokenExpiry)*time.Second,
+	)
+	logger.Info("JWT manager initialized")
 
 	// 初始化服务层（注入仓储）
 	polishService := service.NewPolishService(factory, polishRepo)
+	authService := service.NewAuthService(userRepo, tokenRepo, jwtManager)
 
 	// 初始化处理器
 	polishHandler := handler.NewPolishHandler(polishService)
-	queryHandler := handler.NewPolishQueryHandler(polishService) // 新增查询处理器
+	queryHandler := handler.NewPolishQueryHandler(polishService)
+	authHandler := handler.NewAuthHandler(authService)
 
-	// 设置路由（传入两个handler）
-	r := router.Setup(polishHandler, queryHandler)
+	// 设置路由（传入所有handler和jwtManager）
+	r := router.Setup(polishHandler, queryHandler, authHandler, jwtManager)
 
 	// 创建HTTP服务器
 	srv := &http.Server{
