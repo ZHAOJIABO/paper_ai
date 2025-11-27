@@ -13,6 +13,8 @@ import (
 	"paper_ai/internal/api/router"
 	"paper_ai/internal/config"
 	"paper_ai/internal/infrastructure/ai"
+	"paper_ai/internal/infrastructure/database"
+	"paper_ai/internal/infrastructure/persistence"
 	"paper_ai/internal/service"
 	"paper_ai/pkg/logger"
 	"go.uber.org/zap"
@@ -36,6 +38,13 @@ func main() {
 	cfg := config.Get()
 	logger.Info("config loaded successfully", zap.String("path", configPath))
 
+	// 初始化数据库（新增）
+	if err := database.Init(&cfg.Database); err != nil {
+		logger.Fatal("failed to init database", zap.Error(err))
+	}
+	defer database.Close()
+	logger.Info("database initialized successfully")
+
 	// 初始化AI提供商工厂
 	factory := ai.GetFactory()
 	if err := factory.InitProviders(cfg); err != nil {
@@ -43,14 +52,18 @@ func main() {
 	}
 	logger.Info("AI providers initialized", zap.Strings("providers", factory.ListProviders()))
 
-	// 初始化服务层
-	polishService := service.NewPolishService(factory)
+	// 创建仓储实现（新增）
+	polishRepo := persistence.NewPolishRepository(database.GetDB().GetGormDB())
+
+	// 初始化服务层（注入仓储）
+	polishService := service.NewPolishService(factory, polishRepo)
 
 	// 初始化处理器
 	polishHandler := handler.NewPolishHandler(polishService)
+	queryHandler := handler.NewPolishQueryHandler(polishService) // 新增查询处理器
 
-	// 设置路由
-	r := router.Setup(polishHandler)
+	// 设置路由（传入两个handler）
+	r := router.Setup(polishHandler, queryHandler)
 
 	// 创建HTTP服务器
 	srv := &http.Server{
