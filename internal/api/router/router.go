@@ -24,6 +24,16 @@ func Setup(
 	r.Use(middleware.Logger())
 	r.Use(middleware.CORS())
 
+	// 根路径 - 欢迎页面
+	r.GET("/", func(c *gin.Context) {
+		c.JSON(200, gin.H{
+			"name":    "Paper AI API",
+			"version": "1.0.0",
+			"status":  "running",
+			"docs":    "/api/v1",
+		})
+	})
+
 	// 健康检查接口
 	r.GET("/health", func(c *gin.Context) {
 		c.JSON(200, gin.H{
