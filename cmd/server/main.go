@@ -75,15 +75,17 @@ func main() {
 
 	// 初始化服务层（注入仓储）
 	polishService := service.NewPolishService(factory, polishRepo)
+	comparisonService := service.NewComparisonService(polishRepo)
 	authService := service.NewAuthService(userRepo, tokenRepo, jwtManager)
 
 	// 初始化处理器
 	polishHandler := handler.NewPolishHandler(polishService)
 	queryHandler := handler.NewPolishQueryHandler(polishService)
+	comparisonHandler := handler.NewComparisonHandler(comparisonService)
 	authHandler := handler.NewAuthHandler(authService)
 
 	// 设置路由（传入所有handler和jwtManager）
-	r := router.Setup(polishHandler, queryHandler, authHandler, jwtManager)
+	r := router.Setup(polishHandler, queryHandler, comparisonHandler, authHandler, jwtManager)
 
 	// 创建HTTP服务器
 	srv := &http.Server{

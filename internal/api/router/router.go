@@ -11,6 +11,7 @@ import (
 func Setup(
 	polishHandler *handler.PolishHandler,
 	queryHandler *handler.PolishQueryHandler,
+	comparisonHandler *handler.ComparisonHandler,
 	authHandler *handler.AuthHandler,
 	jwtManager *security.JWTManager,
 ) *gin.Engine {
@@ -66,6 +67,11 @@ func Setup(
 			// 查询记录（需要认证）
 			authenticated.GET("/polish/records", queryHandler.ListRecords)
 			authenticated.GET("/polish/records/:trace_id", queryHandler.GetRecordByTraceID)
+
+			// 对比功能（需要认证）
+			authenticated.GET("/polish/compare/:trace_id", comparisonHandler.GetComparison)
+			authenticated.POST("/polish/compare/:trace_id/action", comparisonHandler.ApplyAction)
+			authenticated.POST("/polish/compare/:trace_id/batch-action", comparisonHandler.BatchApplyAction)
 
 			// 统计信息（需要认证）
 			authenticated.GET("/polish/statistics", queryHandler.GetStatistics)

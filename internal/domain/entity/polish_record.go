@@ -31,6 +31,13 @@ type PolishRecord struct {
 	Status       string
 	ErrorMessage string
 
+	// 对比数据（新增）
+	ComparisonData  string   // 对比数据JSON
+	ChangesCount    int      // 修改总数
+	AcceptedChanges []string // 用户接受的修改ID列表
+	RejectedChanges []string // 用户拒绝的修改ID列表
+	FinalContent    string   // 用户最终确认的文本（原文+接受的修改）
+
 	// 时间戳
 	CreatedAt time.Time
 	UpdatedAt time.Time

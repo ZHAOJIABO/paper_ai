@@ -1,6 +1,7 @@
 package persistence
 
 import (
+	"encoding/json"
 	"time"
 
 	"paper_ai/internal/domain/entity"
@@ -30,6 +31,13 @@ type PolishRecordPO struct {
 	Status          string         `gorm:"type:varchar(20);not null;default:'success';index:idx_status"`
 	ErrorMessage    string         `gorm:"type:text"`
 
+	// 对比数据（新增）
+	ComparisonData  *string `gorm:"type:jsonb"` // 存储对比数据的JSON（指针类型，允许NULL）
+	ChangesCount    int     `gorm:"default:0"`  // 修改总数
+	AcceptedChanges *string `gorm:"type:jsonb"` // 用户接受的修改ID列表（指针类型，允许NULL）
+	RejectedChanges *string `gorm:"type:jsonb"` // 用户拒绝的修改ID列表（指针类型，允许NULL）
+	FinalContent    string  `gorm:"type:text"`  // 用户最终确认的文本（原文+接受的修改）
+
 	CreatedAt       time.Time      `gorm:"autoCreateTime;index:idx_created_at"`
 	UpdatedAt       time.Time      `gorm:"autoUpdateTime"`
 	DeletedAt       gorm.DeletedAt `gorm:"index"` // 软删除支持
@@ -42,7 +50,7 @@ func (PolishRecordPO) TableName() string {
 
 // ToEntity 转换为领域实体
 func (po *PolishRecordPO) ToEntity() *entity.PolishRecord {
-	return &entity.PolishRecord{
+	record := &entity.PolishRecord{
 		ID:              po.ID,
 		TraceID:         po.TraceID,
 		UserID:          po.UserID,
@@ -57,9 +65,42 @@ func (po *PolishRecordPO) ToEntity() *entity.PolishRecord {
 		ProcessTimeMs:   po.ProcessTimeMs,
 		Status:          po.Status,
 		ErrorMessage:    po.ErrorMessage,
+		ComparisonData:  func() string {
+			if po.ComparisonData != nil {
+				return *po.ComparisonData
+			}
+			return ""
+		}(),
+		ChangesCount:    po.ChangesCount,
+		FinalContent:    po.FinalContent,
 		CreatedAt:       po.CreatedAt,
 		UpdatedAt:       po.UpdatedAt,
 	}
+
+	// 解析 JSON 数组
+	if po.AcceptedChanges != nil && *po.AcceptedChanges != "" {
+		var acceptedIDs []string
+		if err := json.Unmarshal([]byte(*po.AcceptedChanges), &acceptedIDs); err == nil {
+			record.AcceptedChanges = acceptedIDs
+		} else {
+			record.AcceptedChanges = []string{}
+		}
+	} else {
+		record.AcceptedChanges = []string{}
+	}
+
+	if po.RejectedChanges != nil && *po.RejectedChanges != "" {
+		var rejectedIDs []string
+		if err := json.Unmarshal([]byte(*po.RejectedChanges), &rejectedIDs); err == nil {
+			record.RejectedChanges = rejectedIDs
+		} else {
+			record.RejectedChanges = []string{}
+		}
+	} else {
+		record.RejectedChanges = []string{}
+	}
+
+	return record
 }
 
 // FromEntity 从领域实体创建PO
@@ -78,8 +119,43 @@ func (po *PolishRecordPO) FromEntity(e *entity.PolishRecord) {
 	po.ProcessTimeMs = e.ProcessTimeMs
 	po.Status = e.Status
 	po.ErrorMessage = e.ErrorMessage
+
+	// 处理 ComparisonData JSONB 字段（空字符串设为 nil）
+	if e.ComparisonData != "" {
+		po.ComparisonData = &e.ComparisonData
+	} else {
+		po.ComparisonData = nil
+	}
+
+	po.ChangesCount = e.ChangesCount
+	po.FinalContent = e.FinalContent
 	po.CreatedAt = e.CreatedAt
 	po.UpdatedAt = e.UpdatedAt
+
+	// 序列化 JSON 数组（如果为空则设为 nil，让数据库存储 NULL）
+	if len(e.AcceptedChanges) > 0 {
+		jsonBytes, err := json.Marshal(e.AcceptedChanges)
+		if err == nil {
+			jsonStr := string(jsonBytes)
+			po.AcceptedChanges = &jsonStr
+		} else {
+			po.AcceptedChanges = nil
+		}
+	} else {
+		po.AcceptedChanges = nil
+	}
+
+	if len(e.RejectedChanges) > 0 {
+		jsonBytes, err := json.Marshal(e.RejectedChanges)
+		if err == nil {
+			jsonStr := string(jsonBytes)
+			po.RejectedChanges = &jsonStr
+		} else {
+			po.RejectedChanges = nil
+		}
+	} else {
+		po.RejectedChanges = nil
+	}
 }
 
 // ToEntityList 批量转换为实体列表

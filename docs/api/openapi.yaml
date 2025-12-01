@@ -17,6 +17,8 @@ tags:
     description: 论文段落润色相关接口
   - name: 查询统计
     description: 查询记录和统计信息
+  - name: 对比功能
+    description: 论文润色对比展示相关接口
 
 components:
   securitySchemes:
@@ -68,6 +70,280 @@ components:
         created_at:
           type: string
           format: date-time
+
+    ComparisonResult:
+      type: object
+      required:
+        - trace_id
+        - original_content
+        - polished_content
+        - annotations
+        - metadata
+        - statistics
+      properties:
+        trace_id:
+          type: string
+          description: 润色记录ID
+          example: trace_1732896000_123_456789
+        original_content:
+          type: string
+          description: 原始文本
+          example: In this paper, we propose a new method to solve the problem.
+        polished_content:
+          type: string
+          description: 润色后文本
+          example: In this paper, we propose a novel methodology to address the issue.
+        annotations:
+          type: array
+          description: 修改标注列表
+          items:
+            $ref: '#/components/schemas/Change'
+        metadata:
+          $ref: '#/components/schemas/Metadata'
+        statistics:
+          $ref: '#/components/schemas/Statistics'
+
+    Change:
+      type: object
+      description: 单个修改标注
+      required:
+        - id
+        - type
+        - polished_position
+        - polished_text
+        - original_text
+        - reason
+        - status
+      properties:
+        id:
+          type: string
+          description: 修改的唯一标识
+          example: change_1
+        type:
+          type: string
+          enum: [vocabulary, grammar, structure]
+          description: 修改类型：vocabulary=词汇优化, grammar=语法修正, structure=结构调整
+          example: vocabulary
+        polished_position:
+          $ref: '#/components/schemas/Position'
+        polished_text:
+          type: string
+          description: 修改后的文本（润色后）
+          example: methodology
+        original_text:
+          type: string
+          description: 原始文本
+          example: method
+        reason:
+          type: string
+          description: 修改理由
+          example: 使用更学术化的词汇，在学术写作中 'methodology' 比 'method' 更正式和专业
+        alternatives:
+          type: array
+          description: 替代方案列表
+          items:
+            $ref: '#/components/schemas/Alternative'
+        confidence:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 1
+          description: 置信度 (0-1)
+          example: 0.95
+        impact:
+          type: string
+          description: 影响维度：academic_tone=学术语气, grammar_correctness=语法正确性, readability=可读性
+          example: academic_tone
+        highlight_color:
+          type: string
+          description: 建议的高亮颜色
+          example: yellow
+        status:
+          type: string
+          enum: [pending, accepted, rejected]
+          description: 修改状态：pending=待处理, accepted=已接受, rejected=已拒绝
+          example: pending
+
+    Position:
+      type: object
+      description: 文本位置信息（基于Unicode字符）
+      required:
+        - start
+        - end
+        - line
+      properties:
+        start:
+          type: integer
+          description: 起始位置（字符索引）
+          example: 32
+        end:
+          type: integer
+          description: 结束位置（字符索引）
+          example: 43
+        line:
+          type: integer
+          description: 所在行号（从1开始）
+          example: 1
+
+    Alternative:
+      type: object
+      description: 替代方案
+      required:
+        - text
+        - reason
+      properties:
+        text:
+          type: string
+          description: 替代文本
+          example: approach
+        reason:
+          type: string
+          description: 使用该替代方案的理由
+          example: 更通用的学术表达，适用于描述研究路径
+
+    Metadata:
+      type: object
+      description: 对比元数据
+      required:
+        - original_word_count
+        - polished_word_count
+        - total_changes
+        - academic_score_improvement
+      properties:
+        original_word_count:
+          type: integer
+          description: 原文词数
+          example: 385
+        polished_word_count:
+          type: integer
+          description: 润色后词数
+          example: 392
+        total_changes:
+          type: integer
+          description: 总修改数
+          example: 15
+        academic_score_improvement:
+          type: number
+          format: float
+          description: 学术性提升百分比
+          example: 23.5
+
+    Statistics:
+      type: object
+      description: 修改统计信息
+      required:
+        - vocabulary_changes
+        - grammar_changes
+        - structure_changes
+      properties:
+        vocabulary_changes:
+          type: integer
+          description: 词汇优化数量
+          example: 8
+        grammar_changes:
+          type: integer
+          description: 语法修正数量
+          example: 4
+        structure_changes:
+          type: integer
+          description: 结构调整数量
+          example: 3
+
+    ChangeActionRequest:
+      type: object
+      description: 单个修改操作请求
+      required:
+        - change_id
+        - action
+      properties:
+        change_id:
+          type: string
+          description: 修改ID
+          example: change_1
+        action:
+          type: string
+          enum: [accept, reject]
+          description: 操作类型：accept=接受, reject=拒绝
+          example: accept
+        alternative_index:
+          type: integer
+          description: 可选：使用第几个替代方案（从0开始）
+          example: 0
+
+    ChangeActionResponse:
+      type: object
+      description: 单个修改操作响应
+      required:
+        - success
+        - updated_content
+        - applied_changes
+        - pending_changes
+      properties:
+        success:
+          type: boolean
+          description: 操作是否成功
+          example: true
+        updated_content:
+          type: string
+          description: 应用修改后的完整文本
+          example: In this paper, we propose a novel methodology...
+        applied_changes:
+          type: array
+          description: 已应用的修改ID列表
+          items:
+            type: string
+          example: [change_1]
+        pending_changes:
+          type: array
+          description: 待处理的修改ID列表
+          items:
+            type: string
+          example: [change_2, change_3]
+
+    BatchActionRequest:
+      type: object
+      description: |
+        批量操作请求。
+
+        **当前版本**：仅支持 `action: accept_all`
+      required:
+        - action
+      properties:
+        action:
+          type: string
+          enum: [accept_all, reject_all]
+          description: |
+            批量操作类型：
+            - accept_all: 接受全部修改（当前可用）
+            - reject_all: 拒绝全部修改（即将支持）
+          example: accept_all
+        change_ids:
+          type: array
+          description: 可选：指定要操作的修改ID列表（不指定则对全部修改执行操作）。注意：指定change_ids功能即将支持
+          items:
+            type: string
+          example: [change_1, change_2, change_3]
+
+    BatchActionResponse:
+      type: object
+      description: 批量操作响应
+      required:
+        - success
+        - updated_content
+        - applied_count
+      properties:
+        success:
+          type: boolean
+          description: 操作是否成功
+          example: true
+        updated_content:
+          type: string
+          description: 应用修改后的完整文本
+          example: In this paper, we propose a novel methodology...
+        applied_count:
+          type: integer
+          description: 成功应用的修改数量
+          example: 15
 
 paths:
   /health:
@@ -529,3 +805,271 @@ paths:
                             type: object
                           style_stats:
                             type: object
+
+  /api/v1/polish/compare/{trace_id}:
+    get:
+      summary: 获取润色对比详情
+      description: 根据 trace_id 获取原文和润色后文本的详细对比信息，包括修改位置、类型、理由和统计数据
+      tags:
+        - 对比功能
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: trace_id
+          in: path
+          required: true
+          description: 润色记录的唯一标识
+          schema:
+            type: string
+            example: trace_1732896000_123_456789
+      responses:
+        '200':
+          description: 成功获取对比数据
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Response'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/ComparisonResult'
+              examples:
+                success:
+                  value:
+                    code: 0
+                    message: success
+                    data:
+                      trace_id: trace_1732896000_123_456789
+                      original_content: In this paper, we propose a new method to solve the problem.
+                      polished_content: In this paper, we propose a novel methodology to address the issue.
+                      annotations:
+                        - id: change_1
+                          type: vocabulary
+                          polished_position:
+                            start: 32
+                            end: 43
+                            line: 1
+                          polished_text: methodology
+                          original_text: method
+                          reason: 使用更学术化的词汇，在学术写作中 'methodology' 比 'method' 更正式和专业，能更准确地表达研究内容
+                          alternatives:
+                            - text: approach
+                              reason: 更通用的学术表达，适用于描述研究路径
+                            - text: technique
+                              reason: 强调技术性方法，适合技术类论文
+                          confidence: 0.95
+                          impact: academic_tone
+                          highlight_color: yellow
+                          status: pending
+                        - id: change_2
+                          type: vocabulary
+                          polished_position:
+                            start: 47
+                            end: 54
+                            line: 1
+                          polished_text: address
+                          original_text: solve
+                          reason: "'address' 在学术语境中更为恰当，表示系统性地处理问题"
+                          alternatives:
+                            - text: tackle
+                              reason: 更积极主动的表达
+                          confidence: 0.88
+                          impact: academic_tone
+                          highlight_color: yellow
+                          status: pending
+                      metadata:
+                        original_word_count: 12
+                        polished_word_count: 12
+                        total_changes: 2
+                        academic_score_improvement: 15.5
+                      statistics:
+                        vocabulary_changes: 2
+                        grammar_changes: 0
+                        structure_changes: 0
+                    trace_id: 550e8400-e29b-41d4-a716-446655440000
+        '401':
+          description: 未登录或Token无效
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Response'
+              example:
+                code: 20001
+                message: 未登录
+                trace_id: 550e8400-e29b-41d4-a716-446655440000
+        '403':
+          description: 无权访问该记录
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Response'
+              example:
+                code: 20002
+                message: 无权访问该记录
+                trace_id: 550e8400-e29b-41d4-a716-446655440000
+        '404':
+          description: 润色记录不存在
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Response'
+              example:
+                code: 20003
+                message: 润色记录不存在
+                trace_id: 550e8400-e29b-41d4-a716-446655440000
+
+  /api/v1/polish/compare/{trace_id}/action:
+    post:
+      summary: 接受或拒绝单个修改
+      description: 对单个修改执行接受或拒绝操作，可选择使用替代方案
+      tags:
+        - 对比功能
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: trace_id
+          in: path
+          required: true
+          description: 润色记录的唯一标识
+          schema:
+            type: string
+            example: trace_1732896000_123_456789
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChangeActionRequest'
+            examples:
+              accept:
+                summary: 接受修改
+                value:
+                  change_id: change_1
+                  action: accept
+              reject:
+                summary: 拒绝修改
+                value:
+                  change_id: change_2
+                  action: reject
+              alternative:
+                summary: 使用替代方案
+                value:
+                  change_id: change_1
+                  action: accept
+                  alternative_index: 0
+      responses:
+        '200':
+          description: 操作成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Response'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/ChangeActionResponse'
+              example:
+                code: 0
+                message: success
+                data:
+                  success: true
+                  updated_content: In this paper, we propose a novel methodology to address the issue.
+                  applied_changes: [change_1]
+                  pending_changes: [change_2, change_3]
+                trace_id: 550e8400-e29b-41d4-a716-446655440000
+        '400':
+          description: 参数错误
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Response'
+              example:
+                code: 10001
+                message: 参数错误：change_id 不能为空
+                trace_id: 550e8400-e29b-41d4-a716-446655440000
+        '401':
+          description: 未登录
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Response'
+        '404':
+          description: 记录或修改不存在
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Response'
+
+  /api/v1/polish/compare/{trace_id}/batch-action:
+    post:
+      summary: 批量接受或拒绝修改
+      description: |
+        批量执行接受或拒绝操作，可指定特定的修改ID列表或全部修改。
+
+        **当前版本限制**：目前仅支持 `accept_all` 操作（一键接受所有修改），`reject_all` 和指定 `change_ids` 的功能将在后续版本中提供。
+      tags:
+        - 对比功能
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: trace_id
+          in: path
+          required: true
+          description: 润色记录的唯一标识
+          schema:
+            type: string
+            example: trace_1732896000_123_456789
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BatchActionRequest'
+            examples:
+              acceptAll:
+                summary: 接受全部修改（当前可用）
+                value:
+                  action: accept_all
+              rejectAll:
+                summary: 拒绝全部修改（即将支持）
+                value:
+                  action: reject_all
+              acceptSpecific:
+                summary: 接受指定修改（即将支持）
+                value:
+                  action: accept_all
+                  change_ids: [change_1, change_3, change_5]
+      responses:
+        '200':
+          description: 批量操作成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Response'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/BatchActionResponse'
+              example:
+                code: 0
+                message: success
+                data:
+                  success: true
+                  updated_content: In this paper, we propose a novel methodology to address complex challenges...
+                  applied_count: 5
+                trace_id: 550e8400-e29b-41d4-a716-446655440000
+        '400':
+          description: 参数错误
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Response'
+        '401':
+          description: 未登录
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Response'
