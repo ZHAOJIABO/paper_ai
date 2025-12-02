@@ -2,7 +2,7 @@ package service
 
 import (
 	"context"
-	"fmt"
+	"strconv"
 	"time"
 
 	"paper_ai/internal/config"
@@ -12,6 +12,7 @@ import (
 	"paper_ai/internal/infrastructure/ai"
 	"paper_ai/internal/infrastructure/ai/types"
 	apperrors "paper_ai/pkg/errors"
+	"paper_ai/pkg/idgen"
 	"paper_ai/pkg/logger"
 	"go.uber.org/zap"
 )
@@ -37,8 +38,15 @@ func (s *PolishService) Polish(ctx context.Context, req *model.PolishRequest, us
 	// 从context中获取traceID，如果没有则生成唯一ID
 	traceID, ok := ctx.Value("trace_id").(string)
 	if !ok || traceID == "" {
-		// 生成唯一的traceID: 时间戳 + 用户ID + 纳秒
-		traceID = fmt.Sprintf("trace_%d_%d_%d", time.Now().Unix(), userID, time.Now().Nanosecond())
+		// 使用 Snowflake ID 生成器生成纯数字 TraceID
+		id, err := idgen.GenerateID()
+		if err != nil {
+			logger.Error("failed to generate trace ID", zap.Error(err))
+			// 降级方案：使用时间戳
+			traceID = strconv.FormatInt(time.Now().UnixNano(), 10)
+		} else {
+			traceID = strconv.FormatInt(id, 10)
+		}
 	}
 
 	// 参数验证
@@ -105,8 +113,12 @@ func (s *PolishService) Polish(ctx context.Context, req *model.PolishRequest, us
 	// 保存成功记录
 	s.saveSuccessRecord(ctx, traceID, req, resp, userID, int(processTime))
 
+	// 设置 TraceID 到响应中
+	resp.TraceID = traceID
+
 	logger.Info("polish completed successfully",
 		zap.String("provider", req.Provider),
+		zap.String("trace_id", traceID),
 		zap.Int("original_length", resp.OriginalLength),
 		zap.Int("polished_length", resp.PolishedLength),
 		zap.Int64("process_time_ms", processTime),

@@ -12,7 +12,7 @@ import (
 // 包含ORM框架的标签，与entity分离，保持领域层纯净
 type PolishRecordPO struct {
 	ID              int64          `gorm:"primaryKey;autoIncrement"`
-	TraceID         string         `gorm:"type:varchar(64);not null;uniqueIndex:idx_trace_id"`
+	TraceID         string         `gorm:"type:varchar(20);not null;uniqueIndex:idx_trace_id;comment:'润色追踪ID(纯数字)'"`
 	UserID          int64          `gorm:"not null;index:idx_user_id"` // 用户ID
 
 	OriginalContent string         `gorm:"type:text;not null"`

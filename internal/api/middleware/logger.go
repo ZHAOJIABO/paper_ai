@@ -16,9 +16,9 @@ func Logger() gin.HandlerFunc {
 		path := c.Request.URL.Path
 		query := c.Request.URL.RawQuery
 
-		// 生成TraceID
-		traceID := uuid.New().String()
-		c.Set("trace_id", traceID)
+		// 生成RequestID用于日志追踪（不影响业务TraceID）
+		requestID := uuid.New().String()
+		c.Set("request_id", requestID)
 
 		// 处理请求
 		c.Next()
@@ -26,7 +26,7 @@ func Logger() gin.HandlerFunc {
 		// 记录日志
 		latency := time.Since(start)
 		logger.Info("request completed",
-			zap.String("trace_id", traceID),
+			zap.String("request_id", requestID),
 			zap.String("method", c.Request.Method),
 			zap.String("path", path),
 			zap.String("query", query),

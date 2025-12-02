@@ -73,7 +73,7 @@ func TestComparisonService_GenerateComparison(t *testing.T) {
 
 	// 准备测试数据
 	testRecord := &entity.PolishRecord{
-		TraceID:         "test_trace_1",
+		TraceID:         "1732701603123",
 		UserID:          12345,
 		OriginalContent: "In this paper, we propose a new method to solve the problem.",
 		PolishedContent: "In this paper, we propose a novel methodology to address the issue.",
@@ -85,14 +85,14 @@ func TestComparisonService_GenerateComparison(t *testing.T) {
 	ctx := context.Background()
 
 	t.Run("生成新的对比数据", func(t *testing.T) {
-		result, err := service.GenerateComparison(ctx, "test_trace_1")
+		result, err := service.GenerateComparison(ctx, "1732701603123")
 		if err != nil {
 			t.Fatalf("GenerateComparison() 失败: %v", err)
 		}
 
 		// 验证基本信息
-		if result.TraceID != "test_trace_1" {
-			t.Errorf("TraceID = %s, 期望 test_trace_1", result.TraceID)
+		if result.TraceID != "1732701603123" {
+			t.Errorf("TraceID = %s, 期望 1732701603123", result.TraceID)
 		}
 
 		if result.OriginalContent == "" || result.PolishedContent == "" {
@@ -147,7 +147,7 @@ func TestComparisonService_GenerateComparison(t *testing.T) {
 	})
 
 	t.Run("记录不存在", func(t *testing.T) {
-		_, err := service.GenerateComparison(ctx, "non_existent_trace")
+		_, err := service.GenerateComparison(ctx, "9999999999999")
 		if err == nil {
 			t.Error("应该返回错误")
 		} else {
@@ -161,7 +161,7 @@ func TestComparisonService_GetComparison(t *testing.T) {
 	service := NewComparisonService(mockRepo)
 
 	testRecord := &entity.PolishRecord{
-		TraceID:         "test_trace_2",
+		TraceID:         "1732701603456",
 		UserID:          12345,
 		OriginalContent: "This is a test method.",
 		PolishedContent: "This is a test methodology.",
@@ -173,7 +173,7 @@ func TestComparisonService_GetComparison(t *testing.T) {
 	ctx := context.Background()
 
 	t.Run("获取对比数据", func(t *testing.T) {
-		result, err := service.GetComparison(ctx, "test_trace_2", 12345)
+		result, err := service.GetComparison(ctx, "1732701603456", 12345)
 		if err != nil {
 			t.Fatalf("GetComparison() 失败: %v", err)
 		}
@@ -186,7 +186,7 @@ func TestComparisonService_GetComparison(t *testing.T) {
 	})
 
 	t.Run("权限验证 - 不同用户", func(t *testing.T) {
-		_, err := service.GetComparison(ctx, "test_trace_2", 99999)
+		_, err := service.GetComparison(ctx, "1732701603456", 99999)
 		if err == nil {
 			t.Error("应该拒绝不同用户的访问")
 		}
@@ -199,7 +199,7 @@ func TestComparisonService_ComplexText(t *testing.T) {
 
 	// 更复杂的文本
 	complexRecord := &entity.PolishRecord{
-		TraceID: "test_complex",
+		TraceID: "1732701603789",
 		UserID:  12345,
 		OriginalContent: `In recent years, the use of machine learning has grown rapidly.
 Many researchers try to solve difficult problems using these new methods.
@@ -214,7 +214,7 @@ Nevertheless, substantial obstacles remain to be surmounted.`,
 
 	ctx := context.Background()
 
-	result, err := service.GenerateComparison(ctx, "test_complex")
+	result, err := service.GenerateComparison(ctx, "1732701603789")
 	if err != nil {
 		t.Fatalf("GenerateComparison() 失败: %v", err)
 	}
@@ -255,7 +255,7 @@ func TestComparisonService_SaveAndRetrieve(t *testing.T) {
 	service := NewComparisonService(mockRepo)
 
 	testRecord := &entity.PolishRecord{
-		TraceID:         "test_save",
+		TraceID:         "1732701603999",
 		UserID:          12345,
 		OriginalContent: "simple text",
 		PolishedContent: "complex text",
@@ -267,13 +267,13 @@ func TestComparisonService_SaveAndRetrieve(t *testing.T) {
 	ctx := context.Background()
 
 	// 第一次生成
-	result1, err := service.GenerateComparison(ctx, "test_save")
+	result1, err := service.GenerateComparison(ctx, "1732701603999")
 	if err != nil {
 		t.Fatalf("第一次生成失败: %v", err)
 	}
 
 	// 验证数据已保存
-	savedRecord, _ := mockRepo.GetByTraceID(ctx, "test_save")
+	savedRecord, _ := mockRepo.GetByTraceID(ctx, "1732701603999")
 	if savedRecord.ComparisonData == "" {
 		t.Error("对比数据未保存")
 	}

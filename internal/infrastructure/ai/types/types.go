@@ -9,6 +9,7 @@ type PolishRequest struct {
 
 // PolishResponse 润色响应
 type PolishResponse struct {
+	TraceID         string   `json:"trace_id"`         // 追踪ID（用于查询记录）
 	PolishedContent string   `json:"polished_content"` // 润色后的文本
 	OriginalLength  int      `json:"original_length"`  // 原始长度
 	PolishedLength  int      `json:"polished_length"`  // 润色后长度
