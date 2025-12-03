@@ -28,7 +28,7 @@ services:
       - ./config:/root/config
       - ./logs:/root/logs
     ports:
-      - "8080:8080"
+      - "127.0.0.1:8080:8080"  # 只绑定到 localhost，外部无法直接访问
     depends_on:
       postgres:
         condition: service_healthy
