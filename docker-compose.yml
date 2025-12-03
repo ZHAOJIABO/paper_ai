@@ -39,7 +39,8 @@ services:
     container_name: paper_ai_nginx
     volumes:
       - ./nginx.conf:/etc/nginx/nginx.conf:ro
-      - ./ssl:/etc/nginx/ssl:ro  # SSL 证书目录（可选）
+      - ./ssl:/etc/nginx/ssl:ro
+      - ./frontend:/usr/share/nginx/html:ro  # 挂载前端静态文件
     ports:
       - "80:80"
       - "443:443"
