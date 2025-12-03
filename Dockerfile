@@ -26,6 +26,7 @@ WORKDIR /root/
 # 从构建阶段复制二进制文件
 COPY --from=builder /app/paper_ai .
 COPY --from=builder /app/config ./config
+COPY --from=builder /app/migrations ./migrations
 
 # 设置时区
 ENV TZ=Asia/Shanghai
