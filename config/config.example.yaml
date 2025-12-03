@@ -1,13 +1,54 @@
+# Paper AI 配置文件
+
+# 服务器配置
 server:
   port: 8080
   read_timeout: 30s
   write_timeout: 30s
 
+# AI 提供商配置
 ai:
-  default_provider: claude
+  default_provider: "claude"
   providers:
     claude:
-      api_key: "sk-ant-xxx"  # 请替换为你的Claude API Key
+      api_key: "${CLAUDE_API_KEY}"  # 从环境变量读取
       base_url: "https://api.anthropic.com"
       model: "claude-3-5-sonnet-20241022"
       timeout: 60s
+    doubao:
+      api_key: "${DOUBAO_API_KEY}"
+      base_url: "https://ark.cn-beijing.volces.com/api/v3"
+      model: "ep-xxxxx"
+      timeout: 60s
+
+# 数据库配置
+database:
+  type: "postgres"
+  host: "localhost"
+  port: 5432
+  user: "postgres"
+  password: "your_password"
+  dbname: "paper_ai"
+  max_idle_conns: 10
+  max_open_conns: 100
+  conn_max_lifetime: 3600  # 秒
+  auto_migrate: true
+  log_mode: "info"  # silent / error / warn / info
+
+# JWT 配置
+jwt:
+  secret_key: "your-secret-key-change-in-production"
+  access_token_expiry: 7200    # 2小时（秒）
+  refresh_token_expiry: 604800 # 7天（秒）
+
+# ID 生成器配置
+idgen:
+  worker_id: 1  # Snowflake 机器ID (0-1023)
+
+# 功能开关配置
+features:
+  # 多版本润色功能
+  multi_version_polish:
+    enabled: true           # 全局开关：是否启用多版本功能
+    default_mode: "single"  # 默认模式：single（单版本）或 multi（多版本）
+    max_concurrent: 3       # 最大并发数（同时生成的版本数）

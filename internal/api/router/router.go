@@ -10,6 +10,7 @@ import (
 // Setup 设置路由
 func Setup(
 	polishHandler *handler.PolishHandler,
+	multiVersionHandler *handler.PolishMultiVersionHandler,
 	queryHandler *handler.PolishQueryHandler,
 	comparisonHandler *handler.ComparisonHandler,
 	authHandler *handler.AuthHandler,
@@ -63,6 +64,8 @@ func Setup(
 
 			// 段落润色（需要认证）
 			authenticated.POST("/polish", polishHandler.Polish)
+			// 多版本润色（需要认证）
+			authenticated.POST("/polish/multi", multiVersionHandler.PolishMultiVersion)
 
 			// 查询记录（需要认证）
 			authenticated.GET("/polish/records", queryHandler.ListRecords)

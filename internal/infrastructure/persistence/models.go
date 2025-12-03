@@ -26,6 +26,8 @@ type PolishRecordPO struct {
 	Provider        string         `gorm:"type:varchar(50);not null;index:idx_provider"`
 	Model           string         `gorm:"type:varchar(100);not null"`
 
+	Mode            string         `gorm:"type:varchar(20);not null;default:'single';index:idx_mode;comment:'润色模式: single(单版本) / multi(多版本)'"`
+
 	ProcessTimeMs   int            `gorm:"default:0;index:idx_process_time"`
 
 	Status          string         `gorm:"type:varchar(20);not null;default:'success';index:idx_status"`
@@ -62,6 +64,7 @@ func (po *PolishRecordPO) ToEntity() *entity.PolishRecord {
 		PolishedLength:  po.PolishedLength,
 		Provider:        po.Provider,
 		Model:           po.Model,
+		Mode:            po.Mode,
 		ProcessTimeMs:   po.ProcessTimeMs,
 		Status:          po.Status,
 		ErrorMessage:    po.ErrorMessage,
@@ -116,6 +119,7 @@ func (po *PolishRecordPO) FromEntity(e *entity.PolishRecord) {
 	po.PolishedLength = e.PolishedLength
 	po.Provider = e.Provider
 	po.Model = e.Model
+	po.Mode = e.Mode
 	po.ProcessTimeMs = e.ProcessTimeMs
 	po.Status = e.Status
 	po.ErrorMessage = e.ErrorMessage
@@ -181,6 +185,11 @@ type UserPO struct {
 	LastLoginIP      string         `gorm:"type:varchar(50)"`
 	LoginCount       int            `gorm:"default:0"`
 	FailedLoginCount int            `gorm:"default:0"`
+
+	// 多版本润色功能权限
+	EnableMultiVersion bool `gorm:"default:false;index:idx_enable_multi_version;comment:'是否启用多版本功能'"`
+	MultiVersionQuota  int  `gorm:"default:0;comment:'多版本配额(0=无限)'"`
+
 	CreatedAt        time.Time      `gorm:"autoCreateTime;index:idx_created_at"`
 	UpdatedAt        time.Time      `gorm:"autoUpdateTime"`
 	DeletedAt        gorm.DeletedAt `gorm:"index"`
@@ -206,6 +215,8 @@ func (po *UserPO) ToEntity() *entity.User {
 		LastLoginIP:      po.LastLoginIP,
 		LoginCount:       po.LoginCount,
 		FailedLoginCount: po.FailedLoginCount,
+		EnableMultiVersion: po.EnableMultiVersion,
+		MultiVersionQuota: po.MultiVersionQuota,
 		CreatedAt:        po.CreatedAt,
 		UpdatedAt:        po.UpdatedAt,
 	}
@@ -225,6 +236,8 @@ func (po *UserPO) FromEntity(e *entity.User) {
 	po.LastLoginIP = e.LastLoginIP
 	po.LoginCount = e.LoginCount
 	po.FailedLoginCount = e.FailedLoginCount
+	po.EnableMultiVersion = e.EnableMultiVersion
+	po.MultiVersionQuota = e.MultiVersionQuota
 	po.CreatedAt = e.CreatedAt
 	po.UpdatedAt = e.UpdatedAt
 }
@@ -280,4 +293,211 @@ func (po *RefreshTokenPO) FromEntity(e *entity.RefreshToken) {
 	po.RevokedAt = e.RevokedAt
 	po.CreatedAt = e.CreatedAt
 	po.UpdatedAt = e.UpdatedAt
+}
+
+// PolishVersionPO 润色版本持久化对象
+type PolishVersionPO struct {
+	ID       int64  `gorm:"primaryKey;autoIncrement"`
+	RecordID int64  `gorm:"not null;index:idx_record_id"`
+
+	// 版本信息
+	VersionType string `gorm:"type:varchar(32);not null;index:idx_version_type"`
+
+	// 输出内容
+	PolishedContent string  `gorm:"type:text;not null"`
+	PolishedLength  int     `gorm:"not null"`
+	Suggestions     *string `gorm:"type:jsonb"` // JSON数组
+
+	// AI信息
+	ModelUsed string `gorm:"type:varchar(64);not null"`
+	PromptID  int64  `gorm:""`
+
+	// 性能指标
+	ProcessTimeMs int `gorm:"not null;default:0"`
+
+	// 状态
+	Status       string `gorm:"type:varchar(20);not null;default:'success'"`
+	ErrorMessage string `gorm:"type:text"`
+
+	// 时间戳
+	CreatedAt time.Time `gorm:"autoCreateTime"`
+}
+
+// TableName 指定表名
+func (PolishVersionPO) TableName() string {
+	return "polish_versions"
+}
+
+// ToEntity 转换为领域实体
+func (po *PolishVersionPO) ToEntity() *entity.PolishVersion {
+	version := &entity.PolishVersion{
+		ID:              po.ID,
+		RecordID:        po.RecordID,
+		VersionType:     po.VersionType,
+		PolishedContent: po.PolishedContent,
+		PolishedLength:  po.PolishedLength,
+		ModelUsed:       po.ModelUsed,
+		PromptID:        po.PromptID,
+		ProcessTimeMs:   po.ProcessTimeMs,
+		Status:          po.Status,
+		ErrorMessage:    po.ErrorMessage,
+		CreatedAt:       po.CreatedAt,
+	}
+
+	// 解析 JSON 数组
+	if po.Suggestions != nil && *po.Suggestions != "" {
+		var suggestions []string
+		if err := json.Unmarshal([]byte(*po.Suggestions), &suggestions); err == nil {
+			version.Suggestions = suggestions
+		} else {
+			version.Suggestions = []string{}
+		}
+	} else {
+		version.Suggestions = []string{}
+	}
+
+	return version
+}
+
+// FromEntity 从领域实体创建PO
+func (po *PolishVersionPO) FromEntity(e *entity.PolishVersion) {
+	po.ID = e.ID
+	po.RecordID = e.RecordID
+	po.VersionType = e.VersionType
+	po.PolishedContent = e.PolishedContent
+	po.PolishedLength = e.PolishedLength
+	po.ModelUsed = e.ModelUsed
+	po.PromptID = e.PromptID
+	po.ProcessTimeMs = e.ProcessTimeMs
+	po.Status = e.Status
+	po.ErrorMessage = e.ErrorMessage
+	po.CreatedAt = e.CreatedAt
+
+	// 序列化 JSON 数组
+	if len(e.Suggestions) > 0 {
+		jsonBytes, err := json.Marshal(e.Suggestions)
+		if err == nil {
+			jsonStr := string(jsonBytes)
+			po.Suggestions = &jsonStr
+		} else {
+			po.Suggestions = nil
+		}
+	} else {
+		po.Suggestions = nil
+	}
+}
+
+// PolishPromptPO Prompt模板持久化对象
+type PolishPromptPO struct {
+	ID int64 `gorm:"primaryKey;autoIncrement"`
+
+	// 基本信息
+	Name        string `gorm:"type:varchar(128);not null"`
+	VersionType string `gorm:"type:varchar(32);not null;index:idx_version_type_prompt"`
+	Language    string `gorm:"type:varchar(16);not null;index:idx_language_prompt"`
+	Style       string `gorm:"type:varchar(32);not null;index:idx_style_prompt"`
+
+	// Prompt内容
+	SystemPrompt       string `gorm:"type:text;not null"`
+	UserPromptTemplate string `gorm:"type:text;not null"`
+
+	// 版本管理
+	Version  int  `gorm:"not null;default:1"`
+	IsActive bool `gorm:"default:true;index:idx_active_prompt"`
+
+	// 元数据
+	Description string  `gorm:"type:text"`
+	Tags        *string `gorm:"type:jsonb"`
+
+	// A/B测试
+	ABTestGroup string `gorm:"type:varchar(32)"`
+	Weight      int    `gorm:"default:100"`
+
+	// 统计信息
+	UsageCount      int     `gorm:"default:0"`
+	SuccessRate     float64 `gorm:"type:decimal(5,2)"`
+	AvgSatisfaction float64 `gorm:"type:decimal(3,2)"`
+
+	// 时间戳
+	CreatedAt time.Time `gorm:"autoCreateTime;index:idx_created_at_prompt"`
+	UpdatedAt time.Time `gorm:"autoUpdateTime"`
+	CreatedBy string    `gorm:"type:varchar(128)"`
+}
+
+// TableName 指定表名
+func (PolishPromptPO) TableName() string {
+	return "polish_prompts"
+}
+
+// ToEntity 转换为领域实体
+func (po *PolishPromptPO) ToEntity() *entity.PolishPrompt {
+	prompt := &entity.PolishPrompt{
+		ID:                 po.ID,
+		Name:               po.Name,
+		VersionType:        po.VersionType,
+		Language:           po.Language,
+		Style:              po.Style,
+		SystemPrompt:       po.SystemPrompt,
+		UserPromptTemplate: po.UserPromptTemplate,
+		Version:            po.Version,
+		IsActive:           po.IsActive,
+		Description:        po.Description,
+		ABTestGroup:        po.ABTestGroup,
+		Weight:             po.Weight,
+		UsageCount:         po.UsageCount,
+		SuccessRate:        po.SuccessRate,
+		AvgSatisfaction:    po.AvgSatisfaction,
+		CreatedAt:          po.CreatedAt,
+		UpdatedAt:          po.UpdatedAt,
+		CreatedBy:          po.CreatedBy,
+	}
+
+	// 解析 JSON 数组
+	if po.Tags != nil && *po.Tags != "" {
+		var tags []string
+		if err := json.Unmarshal([]byte(*po.Tags), &tags); err == nil {
+			prompt.Tags = tags
+		} else {
+			prompt.Tags = []string{}
+		}
+	} else {
+		prompt.Tags = []string{}
+	}
+
+	return prompt
+}
+
+// FromEntity 从领域实体创建PO
+func (po *PolishPromptPO) FromEntity(e *entity.PolishPrompt) {
+	po.ID = e.ID
+	po.Name = e.Name
+	po.VersionType = e.VersionType
+	po.Language = e.Language
+	po.Style = e.Style
+	po.SystemPrompt = e.SystemPrompt
+	po.UserPromptTemplate = e.UserPromptTemplate
+	po.Version = e.Version
+	po.IsActive = e.IsActive
+	po.Description = e.Description
+	po.ABTestGroup = e.ABTestGroup
+	po.Weight = e.Weight
+	po.UsageCount = e.UsageCount
+	po.SuccessRate = e.SuccessRate
+	po.AvgSatisfaction = e.AvgSatisfaction
+	po.CreatedAt = e.CreatedAt
+	po.UpdatedAt = e.UpdatedAt
+	po.CreatedBy = e.CreatedBy
+
+	// 序列化 JSON 数组
+	if len(e.Tags) > 0 {
+		jsonBytes, err := json.Marshal(e.Tags)
+		if err == nil {
+			jsonStr := string(jsonBytes)
+			po.Tags = &jsonStr
+		} else {
+			po.Tags = nil
+		}
+	} else {
+		po.Tags = nil
+	}
 }

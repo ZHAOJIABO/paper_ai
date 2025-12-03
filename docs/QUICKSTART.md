@@ -1,131 +1,149 @@
-# 快速开始指南
+# 多版本润色功能 - 快速启动指南
 
-## 第一步：配置 API Key
+## 前置条件
 
-编辑 [config/config.yaml](config/config.yaml) 文件，将你的 Claude API Key 填入：
+1. Go 1.21+
+2. PostgreSQL 12+
+3. 已配置 AI Provider（Claude 或 Doubao）
+
+## 步骤 1: 执行数据库迁移
+
+```bash
+# 连接到 PostgreSQL
+psql -U postgres -d paper_ai
+
+# 执行迁移脚本
+\i migrations/001_multi_version_polish.sql
+
+# 验证表创建
+\dt polish_*
+
+# 查看初始 Prompt 数据
+SELECT id, name, version_type, language, style, is_active
+FROM polish_prompts;
+
+# 退出
+\q
+```
+
+预期结果：
+- ✅ `polish_records` 表新增 `mode` 字段
+- ✅ `polish_versions` 表创建成功
+- ✅ `polish_prompts` 表创建成功，包含 6 条初始数据
+- ✅ `users` 表新增 `enable_multi_version` 和 `multi_version_quota` 字段
+
+## 步骤 2: 配置文件
+
+复制配置示例：
+
+```bash
+cp config/config.example.yaml config/config.yaml
+```
+
+编辑 `config/config.yaml`，确保包含以下配置：
 
 ```yaml
-ai:
-  default_provider: claude
-  providers:
-    claude:
-      api_key: "sk-ant-你的API-Key"  # 替换这里
-      base_url: "https://api.anthropic.com"
-      model: "claude-3-5-sonnet-20241022"
-      timeout: 60s
+features:
+  multi_version_polish:
+    enabled: true           # 启用多版本功能
+    default_mode: "single"  # 默认单版本
+    max_concurrent: 3       # 最大并发数
 ```
 
-## 第二步：运行服务
-
-### 方式一：使用 Makefile（推荐）
+## 步骤 3: 启动服务
 
 ```bash
-# 安装依赖并编译
-make dev
+# 设置环境变量（根据实际情况）
+export CLAUDE_API_KEY="your_claude_api_key"
+export DOUBAO_API_KEY="your_doubao_api_key"
 
-# 运行服务
-make run
-```
-
-### 方式二：直接运行
-
-```bash
-# 安装依赖
-go mod tidy
-
-# 运行
+# 启动服务
 go run cmd/server/main.go
 ```
 
-服务将在 `http://localhost:8080` 启动。
+预期日志输出：
 
-## 第三步：测试接口
-
-### 1. 健康检查
-
-```bash
-curl http://localhost:8080/health
+```
+[INFO] starting paper_ai service...
+[INFO] config loaded successfully
+[INFO] database initialized successfully
+[INFO] ID generator initialized worker_id=1
+[INFO] AI providers initialized providers=[claude, doubao]
+[INFO] Prompt service initialized with LRU cache
+[INFO] Feature service initialized multi_version_enabled=true default_mode=single
+[INFO] Multi-version polish service initialized
+[INFO] Routes configured successfully
+[INFO] server started port=8080
 ```
 
-### 2. 段落润色（英文）
+## 步骤 4: 为用户开通多版本功能
+
+### 方法 1: 直接修改数据库（测试用）
+
+```sql
+-- 为用户 ID=1 开通多版本功能，无限配额
+UPDATE users
+SET enable_multi_version = true,
+    multi_version_quota = 0
+WHERE id = 1;
+```
+
+## 步骤 5: 测试多版本润色
+
+### 5.1 登录获取 Token
 
 ```bash
-curl -X POST http://localhost:8080/api/v1/polish \
+# 注册用户
+curl -X POST http://localhost:8080/api/v1/auth/register \
+  -H "Content-Type: application/json" \
+  -d '{
+    "username": "testuser",
+    "email": "test@example.com",
+    "password": "password123"
+  }'
+
+# 登录
+curl -X POST http://localhost:8080/api/v1/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{
+    "username": "testuser",
+    "password": "password123"
+  }'
+
+# 保存返回的 access_token
+export TOKEN="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+```
+
+### 5.2 调用多版本润色接口
+
+```bash
+curl -X POST http://localhost:8080/api/v1/polish/multi-version \
+  -H "Authorization: Bearer ${TOKEN}" \
   -H "Content-Type: application/json" \
   -d '{
     "content": "This paper discuss the important of machine learning.",
     "style": "academic",
-    "language": "en"
+    "language": "en",
+    "provider": "claude"
   }'
 ```
 
-### 3. 段落润色（中文）
+## 故障排查
 
-```bash
-curl -X POST http://localhost:8080/api/v1/polish \
-  -H "Content-Type: application/json" \
-  -d '{
-    "content": "这篇文章讨论了机器学习的重要性。",
-    "style": "academic",
-    "language": "zh"
-  }'
+### 问题 1: 无权限错误
+
+解决方案：为用户开通权限
+```sql
+UPDATE users SET enable_multi_version = true WHERE id = 1;
 ```
 
-### 4. 使用测试脚本
+### 问题 2: Prompt 未找到
 
-```bash
-# 在另一个终端窗口运行测试脚本
-./test.sh
+检查 Prompt 是否插入：
+```sql
+SELECT * FROM polish_prompts WHERE is_active = true;
 ```
 
-## API 参数说明
+---
 
-### 请求参数
-
-- `content` (必填): 需要润色的文本
-- `style` (可选): 润色风格
-  - `academic`: 学术风格（默认）
-  - `formal`: 正式风格
-  - `concise`: 简洁风格
-- `language` (可选): 语言
-  - `en`: 英文（默认）
-  - `zh`: 中文
-- `provider` (可选): AI 提供商名称，默认使用配置中的默认提供商
-
-### 响应格式
-
-```json
-{
-  "code": 0,
-  "message": "success",
-  "data": {
-    "polished_content": "润色后的文本",
-    "original_length": 45,
-    "polished_length": 52,
-    "suggestions": [],
-    "provider_used": "claude",
-    "model_used": "claude-3-5-sonnet-20241022"
-  },
-  "trace_id": "uuid-xxx"
-}
-```
-
-## 常见问题
-
-### 1. API Key 在哪里获取？
-
-访问 [Anthropic Console](https://console.anthropic.com/) 注册账号并创建 API Key。
-
-### 2. 如何更改端口？
-
-修改 [config/config.yaml](config/config.yaml) 中的 `server.port` 配置。
-
-### 3. 如何添加其他 AI 模型？
-
-参考 [readme.md](readme.md) 中的"扩展指南"部分。
-
-## 下一步
-
-- 查看完整文档: [readme.md](readme.md)
-- 了解项目架构: [readme.md#项目结构](readme.md#项目结构)
-- 扩展新功能: [readme.md#扩展指南](readme.md#扩展指南)
+🎉 恭喜！多版本润色功能已成功启动！

@@ -2,13 +2,17 @@ package database
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
+	"path/filepath"
 	"time"
 
 	"paper_ai/internal/config"
-	"paper_ai/internal/infrastructure/persistence"
 	"paper_ai/pkg/logger"
 
+	"github.com/golang-migrate/migrate/v4"
+	migratePostgres "github.com/golang-migrate/migrate/v4/database/postgres"
+	_ "github.com/golang-migrate/migrate/v4/source/file"
 	"go.uber.org/zap"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
@@ -78,12 +82,12 @@ func Init(cfg *config.DatabaseConfig) error {
 		zap.String("database", cfg.DBName),
 	)
 
-	// 自动迁移
+	// 运行数据库迁移
 	if cfg.AutoMigrate {
-		if err := migrate(db); err != nil {
-			return fmt.Errorf("failed to auto migrate: %w", err)
+		if err := runMigrations(sqlDB); err != nil {
+			return fmt.Errorf("failed to run migrations: %w", err)
 		}
-		logger.Info("database auto migration completed")
+		logger.Info("database migrations completed")
 	}
 
 	return nil
@@ -131,13 +135,51 @@ func Health(ctx context.Context) error {
 	return nil
 }
 
-// migrate 自动迁移表结构
-func migrate(db *gorm.DB) error {
-	return db.AutoMigrate(
-		&persistence.PolishRecordPO{},
-		&persistence.UserPO{},
-		&persistence.RefreshTokenPO{},
+// runMigrations 运行数据库迁移
+func runMigrations(sqlDB *sql.DB) error {
+	// 获取项目根目录的 migrations 文件夹路径
+	migrationsPath, err := filepath.Abs("migrations")
+	if err != nil {
+		return fmt.Errorf("failed to get migrations path: %w", err)
+	}
+
+	// 创建 postgres 驱动实例
+	driver, err := migratePostgres.WithInstance(sqlDB, &migratePostgres.Config{})
+	if err != nil {
+		return fmt.Errorf("failed to create migrate driver: %w", err)
+	}
+
+	// 创建迁移实例
+	m, err := migrate.NewWithDatabaseInstance(
+		fmt.Sprintf("file://%s", migrationsPath),
+		"postgres",
+		driver,
 	)
+	if err != nil {
+		return fmt.Errorf("failed to create migrate instance: %w", err)
+	}
+
+	// 执行迁移
+	if err := m.Up(); err != nil && err != migrate.ErrNoChange {
+		return fmt.Errorf("failed to run migrations: %w", err)
+	}
+
+	// 获取当前版本
+	version, dirty, err := m.Version()
+	if err != nil && err != migrate.ErrNilVersion {
+		return fmt.Errorf("failed to get migration version: %w", err)
+	}
+
+	if err == migrate.ErrNilVersion {
+		logger.Info("no migrations applied yet")
+	} else {
+		logger.Info("current migration version",
+			zap.Uint("version", version),
+			zap.Bool("dirty", dirty),
+		)
+	}
+
+	return nil
 }
 
 // GetGormDB 获取原生GORM DB实例（用于仓储实现）

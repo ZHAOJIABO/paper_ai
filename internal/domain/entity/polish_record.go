@@ -24,6 +24,9 @@ type PolishRecord struct {
 	Provider string
 	Model    string
 
+	// 模式信息
+	Mode string // single / multi
+
 	// 性能指标
 	ProcessTimeMs int
 
@@ -64,4 +67,25 @@ func (r *PolishRecord) GetCompressionRate() float64 {
 		return 0
 	}
 	return float64(r.OriginalLength-r.PolishedLength) / float64(r.OriginalLength) * 100
+}
+
+// IsMultiVersionMode 判断是否为多版本模式
+func (r *PolishRecord) IsMultiVersionMode() bool {
+	return r.Mode == "multi"
+}
+
+// IsSingleVersionMode 判断是否为单版本模式
+func (r *PolishRecord) IsSingleVersionMode() bool {
+	return r.Mode == "single" || r.Mode == ""
+}
+
+// ModeEnum 模式枚举
+const (
+	ModeSingle = "single" // 单版本模式
+	ModeMulti  = "multi"  // 多版本模式
+)
+
+// IsValidMode 验证模式是否有效
+func IsValidMode(mode string) bool {
+	return mode == ModeSingle || mode == ModeMulti
 }

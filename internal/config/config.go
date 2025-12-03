@@ -13,6 +13,7 @@ type Config struct {
 	Database DatabaseConfig `mapstructure:"database"`
 	JWT      JWTConfig      `mapstructure:"jwt"`
 	IDGen    IDGenConfig    `mapstructure:"idgen"`
+	Features FeaturesConfig `mapstructure:"features"`
 }
 
 type ServerConfig struct {
@@ -55,6 +56,16 @@ type JWTConfig struct {
 
 type IDGenConfig struct {
 	WorkerID int64 `mapstructure:"worker_id"` // Snowflake机器ID (0-1023)
+}
+
+type FeaturesConfig struct {
+	MultiVersionPolish MultiVersionPolishConfig `mapstructure:"multi_version_polish"`
+}
+
+type MultiVersionPolishConfig struct {
+	Enabled       bool   `mapstructure:"enabled"`        // 全局开关
+	DefaultMode   string `mapstructure:"default_mode"`   // 默认模式: single / multi
+	MaxConcurrent int    `mapstructure:"max_concurrent"` // 最大并发数
 }
 
 var globalConfig *Config
@@ -112,4 +123,9 @@ func setDefaults() {
 
 	// ID生成器默认配置
 	viper.SetDefault("idgen.worker_id", 1) // 默认机器ID为1
+
+	// 功能开关默认配置
+	viper.SetDefault("features.multi_version_polish.enabled", true)
+	viper.SetDefault("features.multi_version_polish.default_mode", "single")
+	viper.SetDefault("features.multi_version_polish.max_concurrent", 3)
 }

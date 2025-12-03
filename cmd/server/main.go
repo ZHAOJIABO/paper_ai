@@ -60,10 +60,13 @@ func main() {
 	}
 	logger.Info("AI providers initialized", zap.Strings("providers", factory.ListProviders()))
 
-	// 创建仓储实现（新增）
-	polishRepo := persistence.NewPolishRepository(database.GetDB().GetGormDB())
-	userRepo := persistence.NewUserRepository(database.GetDB().GetGormDB())
-	tokenRepo := persistence.NewRefreshTokenRepository(database.GetDB().GetGormDB())
+	// 创建仓储实现
+	db := database.GetDB().GetGormDB()
+	polishRepo := persistence.NewPolishRepository(db)
+	versionRepo := persistence.NewPolishVersionRepository(db)
+	promptRepo := persistence.NewPolishPromptRepository(db)
+	userRepo := persistence.NewUserRepository(db)
+	tokenRepo := persistence.NewRefreshTokenRepository(db)
 
 	// 初始化JWT管理器
 	jwtManager := security.NewJWTManager(
@@ -74,18 +77,64 @@ func main() {
 	logger.Info("JWT manager initialized")
 
 	// 初始化服务层（注入仓储）
+	// 1. Prompt服务（包含LRU缓存）
+	promptService := service.NewPromptService(promptRepo)
+	logger.Info("Prompt service initialized with LRU cache")
+
+	// 2. 功能开关服务
+	featureConfig := &service.FeatureConfig{
+		MultiVersionEnabled: cfg.Features.MultiVersionPolish.Enabled,
+		DefaultMode:         cfg.Features.MultiVersionPolish.DefaultMode,
+		MaxConcurrent:       cfg.Features.MultiVersionPolish.MaxConcurrent,
+	}
+	featureService := service.NewFeatureService(userRepo, featureConfig)
+	logger.Info("Feature service initialized",
+		zap.Bool("multi_version_enabled", featureConfig.MultiVersionEnabled),
+		zap.String("default_mode", featureConfig.DefaultMode))
+
+	// 3. 单版本润色服务（保留原有）
 	polishService := service.NewPolishService(factory, polishRepo)
+
+	// 4. 多版本润色服务（新增）
+	multiVersionService := service.NewPolishMultiVersionService(
+		factory,
+		polishRepo,
+		versionRepo,
+		promptService,
+		featureService,
+	)
+	logger.Info("Multi-version polish service initialized")
+
+	// 5. 其他服务
 	comparisonService := service.NewComparisonService(polishRepo)
 	authService := service.NewAuthService(userRepo, tokenRepo, jwtManager)
 
 	// 初始化处理器
 	polishHandler := handler.NewPolishHandler(polishService)
+	multiVersionHandler := handler.NewPolishMultiVersionHandler(multiVersionService)
 	queryHandler := handler.NewPolishQueryHandler(polishService)
 	comparisonHandler := handler.NewComparisonHandler(comparisonService)
 	authHandler := handler.NewAuthHandler(authService)
 
+	// TODO: 初始化管理处理器（需要添加管理员权限中间件和路由）
+	// 需要导入: adminhandler "paper_ai/internal/api/handler/admin"
+	// 需要初始化:
+	//   promptAdminHandler := adminhandler.NewPromptAdminHandler(promptRepo)
+	//   featureAdminHandler := adminhandler.NewFeatureAdminHandler(userRepo)
+	// 管理路由需要在 router.Setup 中单独配置，包括：
+	//   - GET/POST/PUT/DELETE /api/v1/admin/prompts/*
+	//   - POST /api/v1/admin/users/:id/multi-version/*
+
 	// 设置路由（传入所有handler和jwtManager）
-	r := router.Setup(polishHandler, queryHandler, comparisonHandler, authHandler, jwtManager)
+	r := router.Setup(
+		polishHandler,
+		multiVersionHandler,
+		queryHandler,
+		comparisonHandler,
+		authHandler,
+		jwtManager,
+	)
+	logger.Info("Routes configured successfully")
 
 	// 创建HTTP服务器
 	srv := &http.Server{
