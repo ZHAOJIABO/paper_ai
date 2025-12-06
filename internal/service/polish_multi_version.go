@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strconv"
 	"sync"
@@ -13,6 +14,7 @@ import (
 	"paper_ai/internal/domain/repository"
 	"paper_ai/internal/infrastructure/ai"
 	"paper_ai/internal/infrastructure/ai/types"
+	"paper_ai/internal/infrastructure/comparison"
 	apperrors "paper_ai/pkg/errors"
 	"paper_ai/pkg/idgen"
 	"paper_ai/pkg/logger"
@@ -27,6 +29,10 @@ type PolishMultiVersionService struct {
 	versionRepo     repository.PolishVersionRepository
 	promptService   *PromptService
 	featureService  *FeatureService
+	diffEngine      *comparison.DiffEngine
+	positionCalc    *comparison.PositionCalculator
+	classifier      *comparison.ChangeClassifier
+	reasonGenerator *comparison.ReasonGenerator
 }
 
 // NewPolishMultiVersionService 创建多版本润色服务
@@ -43,6 +49,10 @@ func NewPolishMultiVersionService(
 		versionRepo:     versionRepo,
 		promptService:   promptService,
 		featureService:  featureService,
+		diffEngine:      comparison.NewDiffEngine(),
+		positionCalc:    comparison.NewPositionCalculator(),
+		classifier:      comparison.NewChangeClassifier(),
+		reasonGenerator: comparison.NewReasonGenerator(),
 	}
 }
 
@@ -136,11 +146,13 @@ func (s *PolishMultiVersionService) PolishMultiVersion(ctx context.Context, req 
 	polishedContent := ""
 	polishedLength := 0
 	modelUsed := ""
-	for _, result := range versions {
+	selectedVersion := "" // 记录使用的版本类型
+	for versionType, result := range versions {
 		if result.Status == "success" {
 			polishedContent = result.PolishedContent
 			polishedLength = result.PolishedLength
 			modelUsed = result.ModelUsed
+			selectedVersion = versionType // 记录第一个成功的版本类型
 			break
 		}
 	}
@@ -149,6 +161,7 @@ func (s *PolishMultiVersionService) PolishMultiVersion(ctx context.Context, req 
 	mainRecord.PolishedContent = polishedContent
 	mainRecord.PolishedLength = polishedLength
 	mainRecord.Model = modelUsed
+	mainRecord.SelectedVersion = selectedVersion // 保存默认选择的版本
 	mainRecord.ProcessTimeMs = totalProcessTime
 
 	if err := s.polishRepo.Update(ctx, mainRecord); err != nil {
@@ -166,10 +179,11 @@ func (s *PolishMultiVersionService) PolishMultiVersion(ctx context.Context, req 
 
 	// 9. 构建响应
 	return &model.PolishMultiVersionResponse{
-		TraceID:        traceID,
-		OriginalLength: len(req.Content),
-		Versions:       versions,
-		ProviderUsed:   req.Provider,
+		TraceID:         traceID,
+		OriginalContent: req.Content,
+		OriginalLength:  len(req.Content),
+		Versions:        versions,
+		ProviderUsed:    req.Provider,
 	}, nil
 }
 
@@ -384,4 +398,217 @@ func (s *PolishMultiVersionService) generateTraceID(ctx context.Context) (string
 	}
 
 	return strconv.FormatInt(id, 10), nil
+}
+
+// SelectVersion 选择一个版本并更新主记录
+// 将选中版本的内容复制到主记录的 polished_content、final_content 以及 comparison_data
+func (s *PolishMultiVersionService) SelectVersion(ctx context.Context, traceID string, userID int64, versionType string) error {
+	logger.Info("selecting version",
+		zap.String("trace_id", traceID),
+		zap.Int64("user_id", userID),
+		zap.String("version_type", versionType))
+
+	// 1. 验证版本类型
+	if !entity.IsValidVersionType(versionType) {
+		return apperrors.NewInvalidParameterError(fmt.Sprintf("无效的版本类型: %s", versionType))
+	}
+
+	// 2. 获取主记录
+	mainRecord, err := s.polishRepo.GetByTraceID(ctx, traceID)
+	if err != nil {
+		logger.Error("failed to get main record",
+			zap.String("trace_id", traceID),
+			zap.Error(err))
+		return apperrors.NewNotFoundError("润色记录不存在")
+	}
+
+	// 3. 验证权限
+	if mainRecord.UserID != userID {
+		return apperrors.NewForbiddenError("无权访问该记录")
+	}
+
+	// 4. 验证记录模式（必须是多版本模式）
+	if mainRecord.Mode != entity.ModeMulti {
+		return apperrors.NewInvalidParameterError("该记录不是多版本润色")
+	}
+
+	// 5. 获取指定版本
+	version, err := s.versionRepo.GetByRecordIDAndType(ctx, mainRecord.ID, versionType)
+	if err != nil {
+		logger.Error("failed to get version",
+			zap.Int64("record_id", mainRecord.ID),
+			zap.String("version_type", versionType),
+			zap.Error(err))
+		return apperrors.NewNotFoundError(fmt.Sprintf("版本 %s 不存在", versionType))
+	}
+
+	// 6. 检查版本状态
+	if version.Status != "success" {
+		return apperrors.NewInvalidParameterError(fmt.Sprintf("版本 %s 生成失败: %s", versionType, version.ErrorMessage))
+	}
+
+	// 7. 生成对比数据
+	comparisonResult, err := s.generateComparisonData(mainRecord.OriginalContent, version.PolishedContent, traceID)
+	if err != nil {
+		logger.Error("failed to generate comparison data",
+			zap.String("trace_id", traceID),
+			zap.String("version_type", versionType),
+			zap.Error(err))
+		return fmt.Errorf("生成对比数据失败: %w", err)
+	}
+
+	// 8. 序列化对比数据
+	comparisonJSON, err := json.Marshal(comparisonResult)
+	if err != nil {
+		logger.Error("failed to marshal comparison data",
+			zap.String("trace_id", traceID),
+			zap.Error(err))
+		return fmt.Errorf("序列化对比数据失败: %w", err)
+	}
+
+	// 9. 更新主记录：将版本的所有内容复制到主记录
+	mainRecord.PolishedContent = version.PolishedContent
+	mainRecord.PolishedLength = version.PolishedLength
+	// 注意：FinalContent 不在这里赋值，而是在用户接受/拒绝修改时才更新
+	mainRecord.Model = version.ModelUsed
+	mainRecord.SelectedVersion = versionType // 记录用户选择的版本
+	mainRecord.ComparisonData = string(comparisonJSON)
+	mainRecord.ChangesCount = comparisonResult.Metadata.TotalChanges
+	mainRecord.AcceptedChanges = []string{}  // 初始为空
+	mainRecord.RejectedChanges = []string{}  // 初始为空
+	mainRecord.ProcessTimeMs = version.ProcessTimeMs
+	mainRecord.UpdatedAt = time.Now()
+
+	// 10. 保存更新
+	if err := s.polishRepo.Update(ctx, mainRecord); err != nil {
+		logger.Error("failed to update main record",
+			zap.Int64("record_id", mainRecord.ID),
+			zap.String("version_type", versionType),
+			zap.Error(err))
+		return fmt.Errorf("更新记录失败: %w", err)
+	}
+
+	logger.Info("version selected successfully",
+		zap.String("trace_id", traceID),
+		zap.String("version_type", versionType),
+		zap.Int("changes_count", comparisonResult.Metadata.TotalChanges))
+
+	return nil
+}
+
+// generateComparisonData 生成对比数据（复用 ComparisonService 的逻辑）
+func (s *PolishMultiVersionService) generateComparisonData(original, polished, traceID string) (*model.ComparisonResult, error) {
+	// 1. 运行 diff 算法
+	diffs := s.diffEngine.GenerateDiff(original, polished)
+
+	// 2. 提取修改信息
+	changes := s.diffEngine.GetChanges(diffs)
+
+	// 3. 计算位置
+	positions := s.positionCalc.CalculatePositions(polished, changes)
+
+	// 4. 生成标注列表
+	annotations := s.buildAnnotations(positions)
+
+	// 5. 计算元数据和统计信息
+	metadata, statistics := s.calculateStats(original, polished, annotations)
+
+	return &model.ComparisonResult{
+		TraceID:         traceID,
+		OriginalContent: original,
+		PolishedContent: polished,
+		FinalContent:    "", // 选择版本时 final_content 为空，等待用户操作
+		Annotations:     annotations,
+		Metadata:        metadata,
+		Statistics:      statistics,
+	}, nil
+}
+
+// buildAnnotations 构建标注列表
+func (s *PolishMultiVersionService) buildAnnotations(positions []comparison.PositionInfo) []model.Change {
+	annotations := make([]model.Change, 0, len(positions))
+
+	for i, pos := range positions {
+		// 分类修改类型
+		changeType := s.classifier.Classify(pos.OriginalText, pos.PolishedText)
+
+		// 生成修改理由
+		reason := s.reasonGenerator.Generate(changeType, pos.OriginalText, pos.PolishedText)
+
+		// 生成替代方案
+		alternatives := s.reasonGenerator.GenerateAlternatives(changeType, pos.OriginalText)
+
+		// 计算置信度
+		confidence := s.reasonGenerator.CalculateConfidence(changeType, pos.OriginalText, pos.PolishedText)
+
+		// 获取影响维度
+		impact := s.reasonGenerator.GetImpact(changeType)
+
+		// 建议高亮颜色
+		highlightColor := s.classifier.SuggestHighlightColor(changeType)
+
+		annotations = append(annotations, model.Change{
+			ID:   fmt.Sprintf("change_%d", i+1),
+			Type: changeType,
+			PolishedPosition: model.Position{
+				Start: pos.Start,
+				End:   pos.End,
+				Line:  pos.Line,
+			},
+			PolishedText:   pos.PolishedText,
+			OriginalText:   pos.OriginalText,
+			Reason:         reason,
+			Alternatives:   alternatives,
+			Confidence:     confidence,
+			Impact:         impact,
+			HighlightColor: highlightColor,
+			Status:         model.ActionStatusPending,
+		})
+	}
+
+	return annotations
+}
+
+// calculateStats 计算统计信息
+func (s *PolishMultiVersionService) calculateStats(original, polished string, annotations []model.Change) (model.Metadata, model.Statistics) {
+	originalWordCount := comparison.CountWords(original)
+	polishedWordCount := comparison.CountWords(polished)
+
+	// 统计各类修改数量
+	var vocabCount, grammarCount, structureCount int
+	for _, ann := range annotations {
+		switch ann.Type {
+		case model.ChangeTypeVocabulary:
+			vocabCount++
+		case model.ChangeTypeGrammar:
+			grammarCount++
+		case model.ChangeTypeStructure:
+			structureCount++
+		}
+	}
+
+	// 计算学术性提升（简单算法：词汇优化占比 * 100）
+	academicImprovement := 0.0
+	if len(annotations) > 0 {
+		academicImprovement = float64(vocabCount) / float64(len(annotations)) * 100
+		// 限制在0-100之间
+		if academicImprovement > 100 {
+			academicImprovement = 100
+		}
+	}
+
+	metadata := model.Metadata{
+		OriginalWordCount:        originalWordCount,
+		PolishedWordCount:        polishedWordCount,
+		TotalChanges:             len(annotations),
+		AcademicScoreImprovement: academicImprovement,
+	}
+
+	statistics := model.Statistics{
+		VocabularyChanges: vocabCount,
+		GrammarChanges:    grammarCount,
+		StructureChanges:  structureCount,
+	}
+
+	return metadata, statistics
 }

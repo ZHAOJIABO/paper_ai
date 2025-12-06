@@ -22,17 +22,19 @@ func NewComparisonHandler(comparisonService *service.ComparisonService) *Compari
 
 // GetComparison 获取对比详情
 // @Summary 获取润色对比详情
-// @Description 根据 trace_id 获取原文和润色后文本的详细对比信息
+// @Description 根据 trace_id 获取原文和润色后文本的详细对比信息。可选参数 version 用于指定多版本润色中的某个版本
 // @Tags 对比
 // @Accept json
 // @Produce json
 // @Param trace_id path string true "润色记录的 trace_id"
+// @Param version query string false "版本类型：conservative/balanced/aggressive（仅多版本润色时使用）"
 // @Success 200 {object} model.ComparisonResult
 // @Failure 404 {object} response.ErrorResponse "记录不存在"
 // @Failure 403 {object} response.ErrorResponse "无权访问"
 // @Router /api/v1/polish/compare/{trace_id} [get]
 func (h *ComparisonHandler) GetComparison(c *gin.Context) {
 	traceID := c.Param("trace_id")
+	versionType := c.Query("version") // 可选：conservative/balanced/aggressive
 
 	// 从上下文获取用户ID（由JWT中间件设置）
 	userID, exists := c.Get("user_id")
@@ -41,7 +43,7 @@ func (h *ComparisonHandler) GetComparison(c *gin.Context) {
 		return
 	}
 
-	result, err := h.comparisonService.GetComparison(c.Request.Context(), traceID, userID.(int64))
+	result, err := h.comparisonService.GetComparison(c.Request.Context(), traceID, userID.(int64), versionType)
 	if err != nil {
 		response.Error(c, err)
 		return
@@ -57,6 +59,7 @@ func (h *ComparisonHandler) GetComparison(c *gin.Context) {
 // @Accept json
 // @Produce json
 // @Param trace_id path string true "润色记录的 trace_id"
+// @Param version query string false "版本类型：conservative/balanced/aggressive（仅多版本润色时使用）"
 // @Param request body model.ChangeActionRequest true "操作请求"
 // @Success 200 {object} model.ChangeActionResponse
 // @Failure 400 {object} response.ErrorResponse "参数错误"
@@ -65,6 +68,7 @@ func (h *ComparisonHandler) GetComparison(c *gin.Context) {
 // @Router /api/v1/polish/compare/{trace_id}/action [post]
 func (h *ComparisonHandler) ApplyAction(c *gin.Context) {
 	traceID := c.Param("trace_id")
+	versionType := c.Query("version") // 可选：conservative/balanced/aggressive
 
 	var req model.ChangeActionRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -79,7 +83,7 @@ func (h *ComparisonHandler) ApplyAction(c *gin.Context) {
 		return
 	}
 
-	result, err := h.comparisonService.ApplyAction(c.Request.Context(), traceID, userID.(int64), &req)
+	result, err := h.comparisonService.ApplyAction(c.Request.Context(), traceID, userID.(int64), versionType, &req)
 	if err != nil {
 		response.Error(c, err)
 		return
@@ -95,6 +99,7 @@ func (h *ComparisonHandler) ApplyAction(c *gin.Context) {
 // @Accept json
 // @Produce json
 // @Param trace_id path string true "润色记录的 trace_id"
+// @Param version query string false "版本类型：conservative/balanced/aggressive（仅多版本润色时使用）"
 // @Param request body model.BatchActionRequest true "批量操作请求"
 // @Success 200 {object} model.BatchActionResponse
 // @Failure 400 {object} response.ErrorResponse "参数错误"
@@ -102,6 +107,7 @@ func (h *ComparisonHandler) ApplyAction(c *gin.Context) {
 // @Router /api/v1/polish/compare/{trace_id}/batch-action [post]
 func (h *ComparisonHandler) BatchApplyAction(c *gin.Context) {
 	traceID := c.Param("trace_id")
+	versionType := c.Query("version") // 可选：conservative/balanced/aggressive
 
 	var req model.BatchActionRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -122,7 +128,7 @@ func (h *ComparisonHandler) BatchApplyAction(c *gin.Context) {
 		return
 	}
 
-	result, err := h.comparisonService.BatchAcceptAll(c.Request.Context(), traceID, userID.(int64))
+	result, err := h.comparisonService.BatchAcceptAll(c.Request.Context(), traceID, userID.(int64), versionType)
 	if err != nil {
 		response.Error(c, err)
 		return

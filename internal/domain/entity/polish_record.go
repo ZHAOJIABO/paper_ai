@@ -25,7 +25,8 @@ type PolishRecord struct {
 	Model    string
 
 	// 模式信息
-	Mode string // single / multi
+	Mode            string // single / multi
+	SelectedVersion string // 用户选择的版本类型（多版本模式下使用）
 
 	// 性能指标
 	ProcessTimeMs int

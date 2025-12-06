@@ -66,6 +66,8 @@ func Setup(
 			authenticated.POST("/polish", polishHandler.Polish)
 			// 多版本润色（需要认证）
 			authenticated.POST("/polish/multi", multiVersionHandler.PolishMultiVersion)
+			// 选择版本（需要认证）
+			authenticated.POST("/polish/select-version/:trace_id", multiVersionHandler.SelectVersion)
 
 			// 查询记录（需要认证）
 			authenticated.GET("/polish/records", queryHandler.ListRecords)

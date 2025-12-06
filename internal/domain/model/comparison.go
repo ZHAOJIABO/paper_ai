@@ -5,6 +5,7 @@ type ComparisonResult struct {
 	TraceID         string      `json:"trace_id"`
 	OriginalContent string      `json:"original_content"`
 	PolishedContent string      `json:"polished_content"`
+	FinalContent    string      `json:"final_content"`    // 用户应用修改后的最终内容
 	Annotations     []Change    `json:"annotations"`
 	Metadata        Metadata    `json:"metadata"`
 	Statistics      Statistics  `json:"statistics"`

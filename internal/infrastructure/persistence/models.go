@@ -27,6 +27,7 @@ type PolishRecordPO struct {
 	Model           string         `gorm:"type:varchar(100);not null"`
 
 	Mode            string         `gorm:"type:varchar(20);not null;default:'single';index:idx_mode;comment:'润色模式: single(单版本) / multi(多版本)'"`
+	SelectedVersion string         `gorm:"type:varchar(20);comment:'用户选择的版本类型(多版本模式下使用)'"`
 
 	ProcessTimeMs   int            `gorm:"default:0;index:idx_process_time"`
 
@@ -65,6 +66,7 @@ func (po *PolishRecordPO) ToEntity() *entity.PolishRecord {
 		Provider:        po.Provider,
 		Model:           po.Model,
 		Mode:            po.Mode,
+		SelectedVersion: po.SelectedVersion,
 		ProcessTimeMs:   po.ProcessTimeMs,
 		Status:          po.Status,
 		ErrorMessage:    po.ErrorMessage,
@@ -120,6 +122,7 @@ func (po *PolishRecordPO) FromEntity(e *entity.PolishRecord) {
 	po.Provider = e.Provider
 	po.Model = e.Model
 	po.Mode = e.Mode
+	po.SelectedVersion = e.SelectedVersion
 	po.ProcessTimeMs = e.ProcessTimeMs
 	po.Status = e.Status
 	po.ErrorMessage = e.ErrorMessage

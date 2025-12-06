@@ -1563,4 +1563,606 @@ VITE_API_BASE_URL=https://api.paperai.com
 
 ---
 
-**最后更新时间**: 2024-11-27
+**最后更新时间**: 2024-12-04
+
+---
+
+## 八、多版本润色与对比功能
+
+### 8.1 多版本润色接口
+
+**接口**: `POST /api/v1/polish/multi-version`
+
+**请求头**:
+```
+Authorization: Bearer {access_token}
+Content-Type: application/json
+```
+
+**请求参数**:
+```typescript
+interface PolishMultiVersionRequest {
+  content: string;     // 需要润色的文本内容
+  style?: string;      // 润色风格：academic/formal/concise，默认academic
+  language?: string;   // 目标语言：en/zh，默认en
+  provider?: string;   // AI提供商：claude/doubao
+  versions?: string[]; // 指定版本类型数组，如 ["conservative", "balanced"]，不指定则生成全部3个版本
+}
+```
+
+**响应数据**:
+```typescript
+interface PolishMultiVersionResponse {
+  trace_id: string;        // 追踪ID
+  original_length: number; // 原文长度
+  versions: {              // 三个版本的润色结果
+    conservative: VersionResult;  // 保守版本：轻微润色，保持原意
+    balanced: VersionResult;      // 均衡版本：适度优化，提升表达
+    aggressive: VersionResult;    // 激进版本：大幅改写，提升质量
+  };
+  provider_used: string;   // 使用的提供商
+}
+
+interface VersionResult {
+  polished_content: string; // 润色后的内容
+  polished_length: number;  // 润色后的长度
+  suggestions: string[];    // 改进建议
+  process_time_ms: number;  // 处理耗时(毫秒)
+  model_used: string;       // 使用的模型
+  status: string;           // 状态: success / failed
+  error_message: string;    // 错误信息(如果失败)
+}
+```
+
+**请求示例**:
+```json
+{
+  "content": "This paper discuss machine learning.",
+  "style": "academic",
+  "language": "en",
+  "provider": "claude"
+}
+```
+
+**响应示例**:
+```json
+{
+  "code": 0,
+  "message": "success",
+  "data": {
+    "trace_id": "1764839051100",
+    "original_length": 38,
+    "versions": {
+      "conservative": {
+        "polished_content": "This paper discusses machine learning.",
+        "polished_length": 40,
+        "suggestions": ["修正语法错误", "保持原文风格"],
+        "process_time_ms": 1200,
+        "model_used": "claude-3-5-sonnet-20241022",
+        "status": "success",
+        "error_message": ""
+      },
+      "balanced": {
+        "polished_content": "This paper provides a comprehensive discussion of machine learning methodologies.",
+        "polished_length": 80,
+        "suggestions": ["增强学术性", "改进表达"],
+        "process_time_ms": 1350,
+        "model_used": "claude-3-5-sonnet-20241022",
+        "status": "success",
+        "error_message": ""
+      },
+      "aggressive": {
+        "polished_content": "This manuscript presents an in-depth exploration of contemporary machine learning paradigms and their practical applications.",
+        "polished_length": 125,
+        "suggestions": ["大幅提升学术性", "丰富专业词汇"],
+        "process_time_ms": 1500,
+        "model_used": "claude-3-5-sonnet-20241022",
+        "status": "success",
+        "error_message": ""
+      }
+    },
+    "provider_used": "claude"
+  },
+  "trace_id": "abc123"
+}
+```
+
+---
+
+### 8.2 查看对比详情（支持版本参数）
+
+**接口**: `GET /api/v1/polish/compare/{trace_id}`
+
+**重要更新**：现在支持 `version` 查询参数，用于指定查看多版本润色中的某个版本的对比。
+
+**请求头**:
+```
+Authorization: Bearer {access_token}
+```
+
+**路径参数**:
+- `trace_id`: 润色记录的追踪ID
+
+**查询参数**:
+```typescript
+interface ComparisonQueryParams {
+  version?: 'conservative' | 'balanced' | 'aggressive';  // 版本类型（仅多版本润色时使用）
+}
+```
+
+**使用场景**:
+1. **单版本润色**：不传 `version` 参数
+   ```
+   GET /api/v1/polish/compare/1764839051100
+   ```
+
+2. **多版本润色**：传入 `version` 参数指定要查看的版本
+   ```
+   GET /api/v1/polish/compare/1764839051100?version=balanced
+   ```
+
+**响应数据**:
+```typescript
+interface ComparisonResult {
+  trace_id: string;
+  original_content: string;
+  polished_content: string;
+  annotations: Change[];
+  metadata: Metadata;
+  statistics: Statistics;
+}
+```
+
+---
+
+### 8.3 应用修改操作（支持版本参数）
+
+**接口**: `POST /api/v1/polish/compare/{trace_id}/action`
+
+**重要更新**：现在支持 `version` 查询参数，用于更新多版本润色中某个版本的内容。
+
+**请求头**:
+```
+Authorization: Bearer {access_token}
+Content-Type: application/json
+```
+
+**查询参数**:
+```typescript
+interface ActionQueryParams {
+  version?: 'conservative' | 'balanced' | 'aggressive';  // 版本类型（仅多版本润色时使用）
+}
+```
+
+**请求体**:
+```typescript
+interface ChangeActionRequest {
+  change_id: string;         // 修改ID
+  action: 'accept' | 'reject';  // 操作类型
+  alternative_index?: number;   // 可选：选择替代方案的索引
+}
+```
+
+**使用场景**:
+1. **单版本润色**：不传 `version` 参数，更新主记录的 `final_content`
+   ```
+   POST /api/v1/polish/compare/1764839051100/action
+   ```
+
+2. **多版本润色**：传入 `version` 参数，更新指定版本的 `polished_content`
+   ```
+   POST /api/v1/polish/compare/1764839051100/action?version=balanced
+   ```
+
+**请求示例**:
+```json
+{
+  "change_id": "change_001",
+  "action": "accept"
+}
+```
+
+**响应数据**:
+```typescript
+interface ChangeActionResponse {
+  success: boolean;
+  updated_content: string;  // 更新后的内容
+  applied_changes: string[]; // 已应用的修改ID列表
+  pending_changes: string[]; // 待处理的修改ID列表
+}
+```
+
+---
+
+### 8.4 批量接受修改（支持版本参数）
+
+**接口**: `POST /api/v1/polish/compare/{trace_id}/batch-action`
+
+**重要更新**：现在支持 `version` 查询参数。
+
+**查询参数**:
+```typescript
+interface BatchActionQueryParams {
+  version?: 'conservative' | 'balanced' | 'aggressive';  // 版本类型（仅多版本润色时使用）
+}
+```
+
+**请求体**:
+```typescript
+interface BatchActionRequest {
+  action: 'accept_all' | 'reject_all';  // 批量操作类型
+  change_ids?: string[];  // 可选：指定特定的修改ID列表
+}
+```
+
+**使用场景**:
+```
+POST /api/v1/polish/compare/1764839051100/batch-action?version=balanced
+```
+
+**响应数据**:
+```typescript
+interface BatchActionResponse {
+  success: boolean;
+  updated_content: string;  // 更新后的完整内容
+  applied_count: number;    // 应用的修改数量
+}
+```
+
+---
+
+### 8.5 前端实现示例
+
+#### 多版本润色 + 版本选择 + 对比流程
+
+```typescript
+// src/pages/MultiVersionPolish.tsx
+import React, { useState } from 'react';
+import { Button, Card, message } from 'antd';
+import { useNavigate } from 'react-router-dom';
+import { polishApi } from '@/api/polish';
+
+interface VersionData {
+  polished_content: string;
+  polished_length: number;
+  suggestions: string[];
+  status: string;
+}
+
+const MultiVersionPolish: React.FC = () => {
+  const navigate = useNavigate();
+  const [loading, setLoading] = useState(false);
+  const [traceId, setTraceId] = useState('');
+  const [versions, setVersions] = useState<Record<string, VersionData> | null>(null);
+  const [originalLength, setOriginalLength] = useState(0);
+
+  // 1. 调用多版本润色
+  const handlePolish = async (content: string) => {
+    setLoading(true);
+    try {
+      const response = await polishApi.multiVersionPolish({
+        content,
+        style: 'academic',
+        language: 'en',
+        provider: 'claude'
+      });
+
+      setTraceId(response.data.trace_id);
+      setVersions(response.data.versions);
+      setOriginalLength(response.data.original_length);
+      message.success('多版本润色完成');
+    } catch (error: any) {
+      message.error(error.message || '润色失败');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // 2. 用户选择一个版本查看详细对比
+  const handleSelectVersion = (versionType: string) => {
+    const versionData = versions![versionType];
+
+    if (versionData.status !== 'success') {
+      message.error(`该版本生成失败：${versionData.error_message || '未知错误'}`);
+      return;
+    }
+
+    // 跳转到对比页面，带上版本参数
+    navigate(`/comparison/${traceId}?version=${versionType}`);
+  };
+
+  const getVersionName = (type: string) => {
+    const names = {
+      conservative: '保守版本',
+      balanced: '均衡版本',
+      aggressive: '激进版本'
+    };
+    return names[type] || type;
+  };
+
+  return (
+    <div>
+      {/* 润色表单... */}
+
+      {versions && (
+        <div style={{ marginTop: 20 }}>
+          <h3>请选择一个版本查看详细对比</h3>
+
+          {Object.entries(versions).map(([versionType, versionData]) => (
+            <Card
+              key={versionType}
+              title={getVersionName(versionType)}
+              extra={
+                <Button
+                  type="primary"
+                  onClick={() => handleSelectVersion(versionType)}
+                  disabled={versionData.status !== 'success'}
+                >
+                  查看详细对比
+                </Button>
+              }
+              style={{ marginBottom: 16 }}
+            >
+              <div>
+                <strong>字数变化：</strong>
+                {versionData.polished_length} 字
+                ({versionData.polished_length - originalLength > 0 ? '+' : ''}
+                {versionData.polished_length - originalLength})
+              </div>
+
+              <div style={{ marginTop: 12 }}>
+                <strong>内容预览：</strong>
+                <p style={{
+                  padding: 12,
+                  background: '#f5f5f5',
+                  borderRadius: 4,
+                  marginTop: 8
+                }}>
+                  {versionData.polished_content.substring(0, 200)}...
+                </p>
+              </div>
+
+              {versionData.suggestions && versionData.suggestions.length > 0 && (
+                <div style={{ marginTop: 12 }}>
+                  <strong>改进建议：</strong>
+                  <ul>
+                    {versionData.suggestions.map((suggestion, idx) => (
+                      <li key={idx}>{suggestion}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {versionData.status !== 'success' && (
+                <div style={{ color: 'red', marginTop: 12 }}>
+                  状态：{versionData.status}
+                  {versionData.error_message && ` - ${versionData.error_message}`}
+                </div>
+              )}
+            </Card>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
+export default MultiVersionPolish;
+```
+
+#### 对比页面（支持版本参数）
+
+```typescript
+// src/pages/Comparison.tsx
+import React, { useEffect, useState } from 'react';
+import { useParams, useSearchParams } from 'react-router-dom';
+import { Button, message } from 'antd';
+import { comparisonApi } from '@/api/comparison';
+
+const Comparison: React.FC = () => {
+  const { traceId } = useParams<{ traceId: string }>();
+  const [searchParams] = useSearchParams();
+  const versionType = searchParams.get('version'); // 获取版本参数
+
+  const [comparisonData, setComparisonData] = useState<any>(null);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    fetchComparison();
+  }, [traceId, versionType]);
+
+  const fetchComparison = async () => {
+    setLoading(true);
+    try {
+      // 构建 URL：如果有 version 参数，添加到查询字符串
+      const url = versionType
+        ? `/api/v1/polish/compare/${traceId}?version=${versionType}`
+        : `/api/v1/polish/compare/${traceId}`;
+
+      const response = await fetch(url, {
+        headers: {
+          'Authorization': `Bearer ${getToken()}`
+        }
+      });
+
+      const result = await response.json();
+      if (result.code === 0) {
+        setComparisonData(result.data);
+      } else {
+        message.error(result.message);
+      }
+    } catch (error: any) {
+      message.error(error.message || '获取对比数据失败');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // 应用修改
+  const handleApplyChange = async (changeId: string, action: 'accept' | 'reject') => {
+    try {
+      // 构建 URL：如果有 version 参数，添加到查询字符串
+      const url = versionType
+        ? `/api/v1/polish/compare/${traceId}/action?version=${versionType}`
+        : `/api/v1/polish/compare/${traceId}/action`;
+
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${getToken()}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          change_id: changeId,
+          action: action
+        })
+      });
+
+      const result = await response.json();
+      if (result.code === 0) {
+        message.success(`已${action === 'accept' ? '接受' : '拒绝'}修改`);
+        // 刷新对比数据
+        fetchComparison();
+      } else {
+        message.error(result.message);
+      }
+    } catch (error: any) {
+      message.error(error.message || '操作失败');
+    }
+  };
+
+  // 一键接受所有修改
+  const handleAcceptAll = async () => {
+    try {
+      // 构建 URL：如果有 version 参数，添加到查询字符串
+      const url = versionType
+        ? `/api/v1/polish/compare/${traceId}/batch-action?version=${versionType}`
+        : `/api/v1/polish/compare/${traceId}/batch-action`;
+
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${getToken()}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          action: 'accept_all'
+        })
+      });
+
+      const result = await response.json();
+      if (result.code === 0) {
+        message.success(`已接受 ${result.data.applied_count} 处修改`);
+        // 刷新对比数据
+        fetchComparison();
+      } else {
+        message.error(result.message);
+      }
+    } catch (error: any) {
+      message.error(error.message || '操作失败');
+    }
+  };
+
+  return (
+    <div>
+      {versionType && (
+        <div style={{ marginBottom: 16, padding: 12, background: '#e6f7ff', borderRadius: 4 }}>
+          当前查看：<strong>{getVersionName(versionType)}</strong>
+        </div>
+      )}
+
+      <Button type="primary" onClick={handleAcceptAll}>
+        一键接受所有修改
+      </Button>
+
+      {/* 对比详情展示... */}
+    </div>
+  );
+};
+
+const getVersionName = (type: string) => {
+  const names = {
+    conservative: '保守版本',
+    balanced: '均衡版本',
+    aggressive: '激进版本'
+  };
+  return names[type] || type;
+};
+
+const getToken = () => localStorage.getItem('access_token');
+
+export default Comparison;
+```
+
+---
+
+### 8.6 重要说明
+
+#### 数据更新机制
+
+1. **单版本润色**：
+   - 修改操作更新 `polish_records` 表的 `final_content` 字段
+   - 不需要传递 `version` 参数
+
+2. **多版本润色**：
+   - 修改操作更新 `polish_versions` 表对应版本记录的 `polished_content` 字段
+   - **必须**传递 `version` 参数，否则系统默认使用主记录（可能导致数据不一致）
+
+#### 错误处理
+
+```typescript
+// 选择版本前检查版本状态
+function selectVersion(versionType: string) {
+  const versionData = versions[versionType];
+
+  if (versionData.status !== 'success') {
+    showError(`该版本生成失败：${versionData.error_message}`);
+    return;
+  }
+
+  // 跳转到对比页面
+  navigateToComparison(traceId, versionType);
+}
+
+// 应用修改时的错误处理
+try {
+  await applyChange(changeId, action, versionType);
+} catch (error) {
+  if (error.code === 404) {
+    message.error('版本不存在或已被删除');
+  } else if (error.code === 400) {
+    message.error('版本状态异常，无法应用修改');
+  } else {
+    message.error('操作失败，请稍后重试');
+  }
+}
+```
+
+#### 常见错误码
+
+| 错误码 | 说明 | 处理建议 |
+|--------|------|----------|
+| 400 | version 参数无效 | 检查传入的 version 是否为有效值 (conservative/balanced/aggressive) |
+| 404 | 版本不存在 | 提示用户版本不存在或已删除 |
+| 400 | 版本生成失败，无法应用修改 | 提示用户该版本生成失败，建议选择其他版本 |
+
+---
+
+### 8.7 测试建议
+
+1. **完整流程测试**：
+   ```
+   多版本润色 → 验证3个版本都成功 → 选择一个版本 → 查看对比 → 应用修改 → 验证内容更新
+   ```
+
+2. **版本参数测试**：
+   - 测试不传 version 参数（单版本兼容性）
+   - 测试传入有效的 version 参数
+   - 测试传入无效的 version 参数（应返回400错误）
+
+3. **边界情况测试**：
+   - 选择 status 为 failed 的版本
+   - 同时打开多个版本的对比页面
+   - 在一个版本应用修改后切换到另一个版本
+
+---

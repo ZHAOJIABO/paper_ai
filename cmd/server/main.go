@@ -106,7 +106,7 @@ func main() {
 	logger.Info("Multi-version polish service initialized")
 
 	// 5. 其他服务
-	comparisonService := service.NewComparisonService(polishRepo)
+	comparisonService := service.NewComparisonService(polishRepo, versionRepo)
 	authService := service.NewAuthService(userRepo, tokenRepo, jwtManager)
 
 	// 初始化处理器

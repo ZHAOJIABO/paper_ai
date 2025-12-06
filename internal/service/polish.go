@@ -191,6 +191,9 @@ func (s *PolishService) GetRecordByTraceID(ctx context.Context, traceID string, 
 		return nil, apperrors.NewForbiddenError("you don't have permission to access this record")
 	}
 
+	// 转换为展示用的记录（历史记录中应该显示 final_content）
+	s.convertRecordForDisplay(record)
+
 	return record, nil
 }
 
@@ -210,7 +213,22 @@ func (s *PolishService) ListRecords(ctx context.Context, opts repository.QueryOp
 		return nil, 0, err
 	}
 
+	// 转换所有记录为展示格式
+	for _, record := range records {
+		s.convertRecordForDisplay(record)
+	}
+
 	return records, total, nil
+}
+
+// convertRecordForDisplay 将记录转换为展示格式
+// 历史记录中的 PolishedContent 应该显示 FinalContent（用户应用修改后的最终内容）
+func (s *PolishService) convertRecordForDisplay(record *entity.PolishRecord) {
+	// 如果存在 final_content，则用它替换 polished_content 用于展示
+	if record.FinalContent != "" {
+		record.PolishedContent = record.FinalContent
+		record.PolishedLength = len(record.FinalContent)
+	}
 }
 
 // GetStatistics 获取统计信息
